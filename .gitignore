@@ -1,5 +1,5 @@
-terraform-provider-gyro
-gyroctl
+/terraform-provider-gyro
+/gyroctl
 dist/
 *.tfstate*
 .terraform/

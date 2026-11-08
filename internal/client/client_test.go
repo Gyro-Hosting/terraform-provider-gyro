@@ -103,7 +103,7 @@ func TestCreateServerMoneyRules(t *testing.T) {
 	if _, err := b.Action(ctx, r1.Server.ID, "reboot", nil); !client.IsNotFound(err) {
 		t.Fatalf("B must get 404 on A's server action: %v", err)
 	}
-	if err := b.DeleteServer(ctx, r1.Server.ID); !client.IsNotFound(err) {
+	if err := b.DeleteServer(ctx, r1.Server.ID, true); !client.IsNotFound(err) {
 		t.Fatalf("B must get 404 on A's server delete: %v", err)
 	}
 	s, err := a.WaitReady(ctx, r1.Server.ID, "running", time.Millisecond)

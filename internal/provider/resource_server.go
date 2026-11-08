@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -50,6 +51,7 @@ type serverModel struct {
 	Price        types.Float64 `tfsdk:"price"`
 	Currency     types.String  `tfsdk:"currency"`
 	DueDate      types.String  `tfsdk:"due_date"`
+	Immediate    types.Bool    `tfsdk:"delete_immediately"`
 }
 
 func (r *serverResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -72,8 +74,8 @@ func (r *serverResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"location": schema.StringAttribute{Optional: true, Computed: true, Description: "Location code, e.g. fsn1.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIfConfigured(), stringplanmodifier.UseStateForUnknown()}},
 			"cycle": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("monthly"),
-				Description: "Billing cycle: monthly (default), quarterly, semiannually, annually.",
-				Validators:  []validator.String{stringvalidator.OneOf("monthly", "quarterly", "semiannually", "annually")},
+				Description:   "Billing cycle: monthly (default), quarterly, semiannually, annually.",
+				Validators:    []validator.String{stringvalidator.OneOf("monthly", "quarterly", "semiannually", "annually")},
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 			"image": schema.StringAttribute{Required: true, Description: "Image slug from gyro_images, e.g. debian-12. Changing it replaces the server.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
@@ -86,7 +88,7 @@ func (r *serverResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"confirm_order": schema.BoolAttribute{Required: true, Description: "Must be true: creating a server spends account balance."},
 			"power_state": schema.StringAttribute{Optional: true, Computed: true, Description: "Desired power state: running or stopped.",
 				Validators: []validator.String{stringvalidator.OneOf("running", "stopped")}},
-			"auto_renew": schema.BoolAttribute{Optional: true, Computed: true, Description: "Renew automatically from the account's payment source."},
+			"auto_renew":   schema.BoolAttribute{Optional: true, Computed: true, Description: "Renew automatically from the account's payment source."},
 			"status":       str("Service status (active, suspended, ...)."),
 			"ipv4":         str("Primary IPv4 address."),
 			"ipv6_network": str("IPv6 /64 network."),
@@ -96,6 +98,8 @@ func (r *serverResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"price":        schema.Float64Attribute{Computed: true, Description: "Recurring price per cycle (VAT excluded)."},
 			"currency":     str("Price currency."),
 			"due_date":     schema.StringAttribute{Computed: true},
+			"delete_immediately": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true),
+				Description: "destroy cancels at once (default; billing stops, server powered off and wiped after the grace period). false = file a cancellation request instead."},
 		},
 	}
 }
@@ -321,7 +325,7 @@ func (r *serverResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 	id, _ := strconv.ParseInt(m.ID.ValueString(), 10, 64)
-	if err := r.pd.c.DeleteServer(ctx, id); err != nil && !client.IsNotFound(err) {
+	if err := r.pd.c.DeleteServer(ctx, id, m.Immediate.IsNull() || m.Immediate.ValueBool()); err != nil && !client.IsNotFound(err) {
 		resp.Diagnostics.AddError("Cancelling server failed", err.Error())
 	}
 }
@@ -333,5 +337,6 @@ func (r *serverResource) ImportState(ctx context.Context, req resource.ImportSta
 	}
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("confirm_order"), true)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("delete_immediately"), true)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("ssh_key_ids"), types.ListNull(types.Int64Type))...)
 }

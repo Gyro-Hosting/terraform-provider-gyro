@@ -306,10 +306,10 @@ type Quote struct {
 }
 
 type CreateServerResult struct {
-	DryRun  bool    `json:"dry_run"`
-	Quote   *Quote  `json:"quote"`
-	Server  *Server `json:"server"`
-	Order   *struct {
+	DryRun bool    `json:"dry_run"`
+	Quote  *Quote  `json:"quote"`
+	Server *Server `json:"server"`
+	Order  *struct {
 		ID     int64  `json:"id"`
 		Number string `json:"number"`
 		Status string `json:"status"`
@@ -457,9 +457,14 @@ func (c *Client) UpdateServer(ctx context.Context, id int64, fields map[string]a
 	return &s, err
 }
 
-func (c *Client) DeleteServer(ctx context.Context, id int64) error {
+// DeleteServer cancels a server. immediate=true cancels now (billing stops, powered off, destroyed after the
+// grace period); false files a cancellation request processed by the panel automation.
+func (c *Client) DeleteServer(ctx context.Context, id int64, immediate bool) error {
 	q := url.Values{"confirm": {"true"}}
-	_, err := c.Do(ctx, http.MethodDelete, fmt.Sprintf("cloud/servers/%d", id), q, map[string]any{"confirm": true}, "", nil)
+	if immediate {
+		q.Set("immediate", "true")
+	}
+	_, err := c.Do(ctx, http.MethodDelete, fmt.Sprintf("cloud/servers/%d", id), q, map[string]any{"confirm": true, "immediate": immediate}, "", nil)
 	return err
 }
 
@@ -518,4 +523,257 @@ func (c *Client) WaitReady(ctx context.Context, id int64, want string, interval 
 		case <-time.After(interval):
 		}
 	}
+}
+
+/* ------------------------------------------------------------------ v2 */
+
+type Service struct {
+	ID          int64   `json:"id"`
+	Type        string  `json:"type"`
+	ProductLine string  `json:"product_line"`
+	Module      *string `json:"module"`
+	Name        string  `json:"name"`
+	Status      string  `json:"status"`
+	ProductID   int64   `json:"product_id"`
+	Host        *string `json:"host"`
+	IP          *string `json:"ip"`
+	Cycle       string  `json:"cycle"`
+	Price       Money   `json:"price"`
+	AutoRenew   bool    `json:"auto_renew"`
+	DueDate     *string `json:"due_date"`
+	CustomerID  *int64  `json:"customer_id"`
+}
+
+type Webhook struct {
+	ID          int64    `json:"id"`
+	URL         string   `json:"url"`
+	Events      []string `json:"events"`
+	Description *string  `json:"description"`
+	CustomerID  *int64   `json:"customer_id"`
+	Status      string   `json:"status"`
+	Secret      string   `json:"secret,omitempty"`
+}
+
+type EndCustomer struct {
+	ID          int64   `json:"id"`
+	Name        string  `json:"name"`
+	Email       *string `json:"email"`
+	ExternalRef *string `json:"external_ref"`
+	Note        *string `json:"note"`
+	Status      string  `json:"status"`
+	AllowOrder  bool    `json:"allow_order"`
+	Services    int64   `json:"services"`
+}
+
+type APIKey struct {
+	ID          int64    `json:"id"`
+	Name        string   `json:"name"`
+	TokenPrefix string   `json:"token_prefix"`
+	CustomerID  *int64   `json:"customer_id"`
+	Scopes      []string `json:"scopes"`
+	Services    []int64  `json:"services"`
+	Actions     []string `json:"actions"`
+	IPs         []string `json:"ips"`
+	RateLimit   *int64   `json:"rate_limit"`
+	Status      string   `json:"status"`
+	Token       string   `json:"token,omitempty"`
+}
+
+func (c *Client) Services(ctx context.Context, productLine string) ([]Service, error) {
+	q := url.Values{}
+	if productLine != "" {
+		q.Set("product_line", productLine)
+	}
+	return listAll[Service](ctx, c, "cloud/services", q)
+}
+
+func (c *Client) Webhook(ctx context.Context, id int64) (*Webhook, error) {
+	var w Webhook
+	_, err := c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/webhooks/%d", id), nil, nil, "", &w)
+	return &w, err
+}
+
+func (c *Client) CreateWebhook(ctx context.Context, body map[string]any) (*Webhook, error) {
+	var w Webhook
+	_, err := c.Do(ctx, http.MethodPost, "cloud/webhooks", nil, body, "", &w)
+	return &w, err
+}
+
+func (c *Client) UpdateWebhook(ctx context.Context, id int64, body map[string]any) (*Webhook, error) {
+	var w Webhook
+	_, err := c.Do(ctx, http.MethodPatch, fmt.Sprintf("cloud/webhooks/%d", id), nil, body, "", &w)
+	return &w, err
+}
+
+func (c *Client) DeleteWebhook(ctx context.Context, id int64) error {
+	_, err := c.Do(ctx, http.MethodDelete, fmt.Sprintf("cloud/webhooks/%d", id), nil, nil, "", nil)
+	return err
+}
+
+func (c *Client) Customer(ctx context.Context, id int64) (*EndCustomer, error) {
+	var e EndCustomer
+	_, err := c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/reseller/customers/%d", id), nil, nil, "", &e)
+	return &e, err
+}
+
+func (c *Client) CreateCustomer(ctx context.Context, body map[string]any) (*EndCustomer, error) {
+	var e EndCustomer
+	_, err := c.Do(ctx, http.MethodPost, "cloud/reseller/customers", nil, body, "", &e)
+	return &e, err
+}
+
+func (c *Client) UpdateCustomer(ctx context.Context, id int64, body map[string]any) (*EndCustomer, error) {
+	var e EndCustomer
+	_, err := c.Do(ctx, http.MethodPatch, fmt.Sprintf("cloud/reseller/customers/%d", id), nil, body, "", &e)
+	return &e, err
+}
+
+func (c *Client) DeleteCustomer(ctx context.Context, id int64) error {
+	_, err := c.Do(ctx, http.MethodDelete, fmt.Sprintf("cloud/reseller/customers/%d", id), url.Values{"confirm": {"true"}}, nil, "", nil)
+	return err
+}
+
+// APIKeys lists sub-account keys of the account (customerID 0) or of an end-customer.
+func (c *Client) APIKeys(ctx context.Context, customerID int64) ([]APIKey, error) {
+	var out []APIKey
+	p := "cloud/keys"
+	if customerID > 0 {
+		p = fmt.Sprintf("cloud/reseller/customers/%d/keys", customerID)
+	}
+	_, err := c.Do(ctx, http.MethodGet, p, nil, nil, "", &out)
+	return out, err
+}
+
+func (c *Client) CreateAPIKey(ctx context.Context, customerID int64, body map[string]any) (*APIKey, error) {
+	var k APIKey
+	p := "cloud/keys"
+	if customerID > 0 {
+		p = fmt.Sprintf("cloud/reseller/customers/%d/keys", customerID)
+	}
+	_, err := c.Do(ctx, http.MethodPost, p, nil, body, "", &k)
+	return &k, err
+}
+
+func (c *Client) DeleteAPIKey(ctx context.Context, customerID, id int64) error {
+	p := fmt.Sprintf("cloud/keys/%d", id)
+	if customerID > 0 {
+		p = fmt.Sprintf("cloud/reseller/customers/%d/keys/%d", customerID, id)
+	}
+	_, err := c.Do(ctx, http.MethodDelete, p, nil, nil, "", nil)
+	return err
+}
+
+/* ------------------------------------------------------------------ v2 typed product lines */
+
+type Mailbox struct {
+	Email   string  `json:"email"`
+	Name    string  `json:"name"`
+	QuotaMB int64   `json:"quota_mb"`
+	UsedMB  float64 `json:"used_mb"`
+	Active  int64   `json:"active"`
+}
+
+type MailAlias struct {
+	ID       int64    `json:"id"`
+	Address  string   `json:"address"`
+	Goto     []string `json:"goto"`
+	Active   int64    `json:"active"`
+	Kind     string   `json:"kind"`
+	KeepCopy bool     `json:"keep_copy"`
+}
+
+type Bucket struct {
+	Name     string `json:"name"`
+	Bytes    int64  `json:"bytes"`
+	Objects  int64  `json:"objects"`
+	State    string `json:"state"`
+	PathURL  string `json:"path_url"`
+	VhostURL string `json:"vhost_url"`
+}
+
+type StorageKey struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Secret string `json:"secret,omitempty"`
+}
+
+type DNSRecord struct {
+	Identity any    `json:"identity,omitempty"`
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Value    string `json:"value"`
+	TTL      any    `json:"ttl,omitempty"`
+	Priority any    `json:"priority,omitempty"`
+}
+
+type AppInstall struct {
+	ID          int64             `json:"id"`
+	App         string            `json:"app"`
+	Status      string            `json:"status"`
+	Progress    int64             `json:"progress"`
+	URL         *string           `json:"url"`
+	Host        *string           `json:"host"`
+	Error       *string           `json:"error"`
+	Credentials map[string]string `json:"credentials"`
+}
+
+func (c *Client) Mailboxes(ctx context.Context, sid int64) ([]Mailbox, error) {
+	var r struct {
+		Items []Mailbox `json:"items"`
+	}
+	_, err := c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/mail/%d/mailboxes", sid), nil, nil, "", &r)
+	return r.Items, err
+}
+
+// MailWrite calls a typed mail/storage/monitor write path (POST/PATCH/PUT/DELETE) and returns the raw data object.
+func (c *Client) TypedWrite(ctx context.Context, method, path string, body map[string]any) (map[string]any, error) {
+	out := map[string]any{}
+	_, err := c.Do(ctx, method, path, nil, body, "", &out)
+	return out, err
+}
+
+func (c *Client) MailAliases(ctx context.Context, sid int64) ([]MailAlias, error) {
+	var r struct {
+		Items []MailAlias `json:"items"`
+	}
+	_, err := c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/mail/%d/aliases", sid), nil, nil, "", &r)
+	return r.Items, err
+}
+
+func (c *Client) Buckets(ctx context.Context, sid int64) ([]Bucket, error) {
+	var r struct {
+		Items []Bucket `json:"items"`
+	}
+	_, err := c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/storage/%d/buckets", sid), nil, nil, "", &r)
+	return r.Items, err
+}
+
+func (c *Client) StorageKeys(ctx context.Context, sid int64) ([]StorageKey, error) {
+	var r struct {
+		Items []StorageKey `json:"items"`
+	}
+	_, err := c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/storage/%d/keys", sid), nil, nil, "", &r)
+	return r.Items, err
+}
+
+func (c *Client) CreateStorageKey(ctx context.Context, sid int64, label string) (*StorageKey, error) {
+	var r struct {
+		Key StorageKey `json:"key"`
+	}
+	_, err := c.Do(ctx, http.MethodPost, fmt.Sprintf("cloud/storage/%d/keys", sid), nil, map[string]any{"label": label, "confirm": true}, "", &r)
+	return &r.Key, err
+}
+
+func (c *Client) DNSRecords(ctx context.Context, domain string) ([]DNSRecord, error) {
+	var out []DNSRecord
+	_, err := c.Do(ctx, http.MethodGet, "domains/"+url.PathEscape(domain)+"/dns-records", nil, nil, "", &out)
+	return out, err
+}
+
+func (c *Client) AppStatus(ctx context.Context, serverID int64) (*AppInstall, error) {
+	var r struct {
+		Install *AppInstall `json:"install"`
+	}
+	_, err := c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/servers/%d/app", serverID), nil, nil, "", &r)
+	return r.Install, err
 }

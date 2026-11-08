@@ -33,10 +33,10 @@ func TestProviderSchema(t *testing.T) {
 	if !resp.Schema.Attributes["token"].IsSensitive() {
 		t.Fatal("token must be sensitive")
 	}
-	if n := len(p.Resources(context.Background())); n != 2 {
+	if n := len(p.Resources(context.Background())); n != 11 {
 		t.Fatalf("resources: %d", n)
 	}
-	if n := len(p.DataSources(context.Background())); n != 3 {
+	if n := len(p.DataSources(context.Background())); n != 4 {
 		t.Fatalf("data sources: %d", n)
 	}
 }
@@ -87,7 +87,7 @@ resource "gyro_server" "web" {
 		ProtoV6ProviderFactories: factories,
 		CheckDestroy: func(s *terraform.State) error {
 			st, cancel, _, _, ok := m.ServerStatus(serverID)
-			if !ok || (cancel != "pending" && st != "cancelled") {
+			if !ok || st != "cancelled" {
 				return fmt.Errorf("server %d not cancelled on destroy (status=%s cancel=%s)", serverID, st, cancel)
 			}
 			if m.KeyExists(1) {

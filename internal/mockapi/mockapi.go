@@ -15,19 +15,19 @@ import (
 )
 
 type server struct {
-	ID         int64
-	Owner      int64
-	ProductID  int64
-	Type, Loc  string
-	Image      string
-	Hostname   string
-	Status     string // inprocess -> active, cancelled
-	Power      string
-	Polls      int // GETs left until provisioning completes
-	Cancel     string
-	AutoRenew  bool
-	Cycle      string
-	Snapshots  []map[string]any
+	ID        int64
+	Owner     int64
+	ProductID int64
+	Type, Loc string
+	Image     string
+	Hostname  string
+	Status    string // inprocess -> active, cancelled
+	Power     string
+	Polls     int // GETs left until provisioning completes
+	Cancel    string
+	AutoRenew bool
+	Cycle     string
+	Snapshots []map[string]any
 }
 
 type key struct {
@@ -43,17 +43,53 @@ type idem struct {
 	body   []byte
 }
 
+type webhook struct {
+	ID, Owner, Customer int64
+	URL, Desc, Status   string
+	Events              []string
+}
+
+type customer struct {
+	ID, Reseller      int64
+	Name, Ref, Status string
+	AllowOrder        bool
+}
+
+type subkey struct {
+	ID, Owner, Customer int64
+	Name                string
+	Scopes              []string
+	RateLimit           int64
+}
+
+// typed product-line state (mail service 2000, storage service 3000, domain example.com - all owner 1)
+type typedState struct {
+	mailboxes map[string]map[string]any
+	aliases   map[int64]map[string]any
+	buckets   map[string]bool
+	skeys     map[string]string
+	dns       []map[string]any
+	app       map[int64]map[string]any
+	nextAlias int64
+}
+
 // API is safe for concurrent use.
 type API struct {
-	mu       sync.Mutex
-	Tokens   map[string]int64   // token -> owner
-	Balance  map[int64]float64  // owner -> TRY
-	servers  map[int64]*server
-	keys     map[int64]*key
-	idem     map[string]idem
-	nextSrv  int64
-	nextKey  int64
-	Calls    []string
+	T         typedState
+	hooks     map[int64]*webhook
+	customers map[int64]*customer
+	subkeys   map[int64]*subkey
+	nextObj   int64
+	Resellers map[int64]bool
+	mu        sync.Mutex
+	Tokens    map[string]int64  // token -> owner
+	Balance   map[int64]float64 // owner -> TRY
+	servers   map[int64]*server
+	keys      map[int64]*key
+	idem      map[string]idem
+	nextSrv   int64
+	nextKey   int64
+	Calls     []string
 	// ProvisionPolls is how many GETs a new server stays "inprocess" (default 1).
 	ProvisionPolls int
 }
@@ -68,6 +104,13 @@ func New() *API {
 		nextSrv:        1000,
 		nextKey:        1,
 		ProvisionPolls: 1,
+		hooks:          map[int64]*webhook{},
+		customers:      map[int64]*customer{},
+		subkeys:        map[int64]*subkey{},
+		nextObj:        100,
+		Resellers:      map[int64]bool{1: true},
+		T: typedState{mailboxes: map[string]map[string]any{}, aliases: map[int64]map[string]any{}, buckets: map[string]bool{}, skeys: map[string]string{},
+			app: map[int64]map[string]any{}, nextAlias: 1},
 	}
 }
 
@@ -238,6 +281,25 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ok(w, 200, out, map[string]any{"total": len(out), "page": 1, "limit": 100, "next_page": 0})
 	case m == "POST" && path == "cloud/servers":
 		a.create(w, r, owner, body)
+	case path == "cloud/services" && m == "GET":
+		out := []map[string]any{}
+		for i := int64(1000); i < a.nextSrv; i++ {
+			if s := a.servers[i]; s != nil && s.Owner == owner {
+				out = append(out, map[string]any{"id": s.ID, "type": "server", "product_line": "cloud_server", "name": "Gyro Bulut", "status": s.Status,
+					"product_id": s.ProductID, "cycle": s.Cycle, "price": map[string]any{"amount": 553.49, "currency": "TRY"}, "auto_renew": false})
+			}
+		}
+		ok(w, 200, out, map[string]any{"total": len(out), "page": 1, "limit": 100, "next_page": 0})
+	case strings.HasPrefix(path, "cloud/mail/") || strings.HasPrefix(path, "cloud/storage/") || strings.HasPrefix(path, "domains/"):
+		a.typed(w, m, owner, seg, body)
+	case len(seg) == 4 && seg[0] == "cloud" && seg[1] == "servers" && seg[3] == "app":
+		a.appRoute(w, m, owner, id(2), body)
+	case strings.HasPrefix(path, "cloud/webhooks"):
+		a.webhooks(w, m, owner, seg, body)
+	case strings.HasPrefix(path, "cloud/reseller/customers"):
+		a.reseller(w, m, owner, seg, body, r)
+	case path == "cloud/keys" || strings.HasPrefix(path, "cloud/keys/"):
+		a.keysRoute(w, m, owner, 0, seg, 2, body)
 	case len(seg) >= 3 && seg[0] == "cloud" && seg[1] == "servers":
 		s := a.servers[id(2)]
 		if s == nil || s.Owner != owner {
@@ -359,6 +421,11 @@ func (a *API) serverRoute(w http.ResponseWriter, r *http.Request, s *server, seg
 			fail(w, 422, "confirm_required", "Repeat with confirm=true.")
 			return
 		}
+		if r.URL.Query().Get("immediate") == "true" {
+			s.Status = "cancelled"
+			ok(w, 202, map[string]any{"status": "cancelled", "server_id": s.ID}, nil)
+			return
+		}
 		s.Cancel = "pending"
 		ok(w, 202, map[string]any{"status": "cancellation_requested", "server_id": s.ID}, nil)
 	case len(seg) == 5 && seg[3] == "actions" && m == "POST":
@@ -419,4 +486,363 @@ func (a *API) KeyExists(id int64) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.keys[id] != nil
+}
+
+func strs(v any) []string {
+	out := []string{}
+	if l, ok := v.([]any); ok {
+		for _, x := range l {
+			if s, ok := x.(string); ok {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+func (a *API) hookJSON(h *webhook) map[string]any {
+	var cust any
+	if h.Customer > 0 {
+		cust = h.Customer
+	}
+	return map[string]any{"id": h.ID, "url": h.URL, "events": h.Events, "description": h.Desc, "customer_id": cust, "status": h.Status}
+}
+
+func (a *API) webhooks(w http.ResponseWriter, m string, owner int64, seg []string, body map[string]any) {
+	if len(seg) == 2 && m == "POST" {
+		u, _ := body["url"].(string)
+		if !strings.HasPrefix(u, "https://") || strings.Contains(u, "127.0.0.1") || strings.Contains(u, "localhost") {
+			fail(w, 422, "invalid_url", "url must be an https:// address on a public host.")
+			return
+		}
+		h := &webhook{ID: a.nextObj, Owner: owner, URL: u, Events: strs(body["events"]), Status: "active"}
+		h.Desc, _ = body["description"].(string)
+		if c, isNum := body["customer_id"].(float64); isNum {
+			h.Customer = int64(c)
+		}
+		a.nextObj++
+		a.hooks[h.ID] = h
+		out := a.hookJSON(h)
+		out["secret"] = strings.Repeat("ab", 32)
+		ok(w, 201, out, nil)
+		return
+	}
+	if len(seg) == 2 && m == "GET" {
+		out := []map[string]any{}
+		for _, h := range a.hooks {
+			if h.Owner == owner {
+				out = append(out, a.hookJSON(h))
+			}
+		}
+		ok(w, 200, out, nil)
+		return
+	}
+	id, _ := strconv.ParseInt(seg[2], 10, 64)
+	h := a.hooks[id]
+	if h == nil || h.Owner != owner {
+		fail(w, 404, "webhook_not_found", "Webhook not found.")
+		return
+	}
+	switch m {
+	case "GET":
+		ok(w, 200, a.hookJSON(h), nil)
+	case "PATCH":
+		if u, has := body["url"].(string); has {
+			h.URL = u
+		}
+		if _, has := body["events"]; has {
+			h.Events = strs(body["events"])
+		}
+		if d, has := body["description"].(string); has {
+			h.Desc = d
+		}
+		if st, has := body["status"].(string); has {
+			h.Status = st
+		}
+		ok(w, 200, a.hookJSON(h), nil)
+	case "DELETE":
+		delete(a.hooks, id)
+		ok(w, 200, map[string]any{"deleted": true}, nil)
+	}
+}
+
+func (a *API) custJSON(c *customer) map[string]any {
+	var ref any
+	if c.Ref != "" {
+		ref = c.Ref
+	}
+	return map[string]any{"id": c.ID, "name": c.Name, "external_ref": ref, "status": c.Status, "allow_order": c.AllowOrder, "services": 0, "email": nil, "note": nil}
+}
+
+func (a *API) reseller(w http.ResponseWriter, m string, owner int64, seg []string, body map[string]any, r *http.Request) {
+	if !a.Resellers[owner] {
+		fail(w, 403, "not_reseller", "Reseller endpoints need an active reseller account.")
+		return
+	}
+	if len(seg) == 3 && m == "POST" {
+		n, _ := body["name"].(string)
+		if n == "" {
+			fail(w, 422, "invalid_name", "name is required.")
+			return
+		}
+		c := &customer{ID: a.nextObj, Reseller: owner, Name: n, Status: "active"}
+		c.Ref, _ = body["external_ref"].(string)
+		c.AllowOrder, _ = body["allow_order"].(bool)
+		a.nextObj++
+		a.customers[c.ID] = c
+		ok(w, 201, a.custJSON(c), nil)
+		return
+	}
+	if len(seg) < 4 {
+		fail(w, 404, "endpoint_not_found", "")
+		return
+	}
+	id, _ := strconv.ParseInt(seg[3], 10, 64)
+	c := a.customers[id]
+	if c == nil || c.Reseller != owner {
+		fail(w, 404, "customer_not_found", "Customer not found.")
+		return
+	}
+	if len(seg) >= 5 && seg[4] == "keys" {
+		a.keysRoute(w, m, owner, id, seg, 5, body)
+		return
+	}
+	switch m {
+	case "GET":
+		ok(w, 200, a.custJSON(c), nil)
+	case "PATCH":
+		if n, has := body["name"].(string); has {
+			c.Name = n
+		}
+		if n, has := body["external_ref"].(string); has {
+			c.Ref = n
+		}
+		if n, has := body["status"].(string); has {
+			c.Status = n
+		}
+		if n, has := body["allow_order"].(bool); has {
+			c.AllowOrder = n
+		}
+		ok(w, 200, a.custJSON(c), nil)
+	case "DELETE":
+		if r.URL.Query().Get("confirm") != "true" {
+			fail(w, 422, "confirm_required", "confirm=true")
+			return
+		}
+		for k, sk := range a.subkeys {
+			if sk.Customer == id {
+				delete(a.subkeys, k)
+			}
+		}
+		delete(a.customers, id)
+		ok(w, 200, map[string]any{"deleted": true}, nil)
+	}
+}
+
+func (a *API) keyJSON(k *subkey) map[string]any {
+	var cust, rl any
+	if k.Customer > 0 {
+		cust = k.Customer
+	}
+	if k.RateLimit > 0 {
+		rl = k.RateLimit
+	}
+	return map[string]any{"id": k.ID, "name": k.Name, "token_prefix": "wck_mock", "customer_id": cust, "scopes": k.Scopes, "ips": []string{}, "rate_limit": rl, "status": "active"}
+}
+
+func (a *API) keysRoute(w http.ResponseWriter, m string, owner, customer int64, seg []string, idx int, body map[string]any) {
+	if len(seg) == idx && m == "GET" {
+		out := []map[string]any{}
+		for _, k := range a.subkeys {
+			if k.Owner == owner && k.Customer == customer {
+				out = append(out, a.keyJSON(k))
+			}
+		}
+		ok(w, 200, out, nil)
+		return
+	}
+	if len(seg) == idx && m == "POST" {
+		k := &subkey{ID: a.nextObj, Owner: owner, Customer: customer, Scopes: strs(body["scopes"])}
+		k.Name, _ = body["name"].(string)
+		if rl, isNum := body["rate_limit"].(float64); isNum {
+			k.RateLimit = int64(rl)
+		}
+		if len(k.Scopes) == 0 {
+			k.Scopes = []string{"cloud_read"}
+		}
+		a.nextObj++
+		a.subkeys[k.ID] = k
+		tok := fmt.Sprintf("wck_mocktoken%020d", k.ID)
+		a.Tokens[tok] = owner
+		out := a.keyJSON(k)
+		out["token"] = tok
+		ok(w, 201, out, nil)
+		return
+	}
+	if len(seg) == idx+1 && m == "DELETE" {
+		id, _ := strconv.ParseInt(seg[idx], 10, 64)
+		k := a.subkeys[id]
+		if k == nil || k.Owner != owner || k.Customer != customer {
+			fail(w, 404, "key_not_found", "Key not found.")
+			return
+		}
+		delete(a.subkeys, id)
+		ok(w, 200, map[string]any{"deleted": true}, nil)
+		return
+	}
+	fail(w, 404, "endpoint_not_found", "")
+}
+
+// Counts is a test helper: live webhooks, customers and sub keys.
+func (a *API) Counts() (hooks, customers, keys int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.hooks), len(a.customers), len(a.subkeys)
+}
+
+func (a *API) typed(w http.ResponseWriter, m string, owner int64, seg []string, body map[string]any) {
+	if owner != 1 {
+		fail(w, 404, "service_not_found", "Service not found.")
+		return
+	}
+	t := &a.T
+	key := strings.Join(seg, "/")
+	switch {
+	case seg[0] == "cloud" && seg[1] == "mail" && seg[2] != "2000", seg[0] == "cloud" && seg[1] == "storage" && seg[2] != "3000":
+		fail(w, 404, "service_not_found", "Service not found.")
+	case key == "cloud/mail/2000/mailboxes" && m == "GET":
+		items := []map[string]any{}
+		for _, b := range t.mailboxes {
+			items = append(items, b)
+		}
+		ok(w, 200, map[string]any{"items": items}, nil)
+	case key == "cloud/mail/2000/mailboxes" && m == "POST":
+		lp, _ := body["local_part"].(string)
+		if lp == "" || body["password"] == nil {
+			fail(w, 422, "tool_action_failed", "local_part and password required")
+			return
+		}
+		q := int64(1024)
+		if f, isNum := body["quota"].(float64); isNum {
+			q = int64(f)
+		}
+		name, _ := body["name"].(string)
+		t.mailboxes[lp] = map[string]any{"email": lp + "@example.com", "name": name, "quota_mb": q, "used_mb": 0, "active": 1}
+		ok(w, 202, map[string]any{"status": "accepted"}, nil)
+	case len(seg) >= 5 && seg[3] == "mailboxes":
+		mb := t.mailboxes[seg[4]]
+		if mb == nil {
+			fail(w, 422, "tool_action_failed", "not yours")
+			return
+		}
+		switch {
+		case m == "DELETE":
+			if body["confirm"] != true {
+				fail(w, 422, "confirm_required", "confirm")
+				return
+			}
+			delete(t.mailboxes, seg[4])
+		case m == "PATCH":
+			if v, has := body["name"].(string); has {
+				mb["name"] = v
+			}
+			if v, has := body["quota"].(float64); has {
+				mb["quota_mb"] = int64(v)
+			}
+			if v, has := body["active"].(float64); has {
+				mb["active"] = int64(v)
+			}
+		}
+		ok(w, 202, map[string]any{"status": "accepted"}, nil)
+	case key == "cloud/mail/2000/aliases" && m == "GET":
+		items := []map[string]any{}
+		for _, x := range t.aliases {
+			items = append(items, x)
+		}
+		ok(w, 200, map[string]any{"items": items}, nil)
+	case key == "cloud/mail/2000/aliases" && m == "POST":
+		lp, _ := body["local_part"].(string)
+		g, _ := body["goto"].(string)
+		t.aliases[t.nextAlias] = map[string]any{"id": t.nextAlias, "address": lp + "@example.com", "goto": strings.Split(g, ","), "active": 1, "kind": "forward"}
+		t.nextAlias++
+		ok(w, 202, map[string]any{"status": "accepted"}, nil)
+	case len(seg) == 5 && seg[3] == "aliases":
+		aid, _ := strconv.ParseInt(seg[4], 10, 64)
+		x := t.aliases[aid]
+		if x == nil {
+			fail(w, 422, "tool_action_failed", "not yours")
+			return
+		}
+		if m == "DELETE" {
+			delete(t.aliases, aid)
+		} else if g, has := body["goto"].(string); has {
+			x["goto"] = strings.Split(g, ",")
+		}
+		ok(w, 202, map[string]any{"status": "accepted"}, nil)
+	case key == "cloud/storage/3000/buckets" && m == "GET":
+		items := []map[string]any{}
+		for b := range t.buckets {
+			items = append(items, map[string]any{"name": b, "bytes": 0, "objects": 0, "state": "ready", "path_url": "https://s3.example/" + b, "vhost_url": "https://" + b + ".s3.example"})
+		}
+		ok(w, 200, map[string]any{"items": items}, nil)
+	case key == "cloud/storage/3000/buckets" && m == "POST":
+		b, _ := body["bucket"].(string)
+		t.buckets[b] = true
+		ok(w, 202, map[string]any{"status": "accepted"}, nil)
+	case len(seg) == 5 && seg[3] == "buckets" && m == "DELETE":
+		delete(t.buckets, seg[4])
+		ok(w, 202, map[string]any{"status": "accepted"}, nil)
+	case key == "cloud/storage/3000/keys" && m == "GET":
+		items := []map[string]any{}
+		for k, l := range t.skeys {
+			items = append(items, map[string]any{"id": k, "label": l})
+		}
+		ok(w, 200, map[string]any{"items": items}, nil)
+	case key == "cloud/storage/3000/keys" && m == "POST":
+		l, _ := body["label"].(string)
+		k := fmt.Sprintf("GKMOCK%04d", len(t.skeys)+1)
+		t.skeys[k] = l
+		ok(w, 202, map[string]any{"status": "accepted", "key": map[string]any{"id": k, "secret": strings.Repeat("s", 40), "label": l}}, nil)
+	case len(seg) == 5 && seg[3] == "keys" && m == "DELETE":
+		delete(t.skeys, seg[4])
+		ok(w, 202, map[string]any{"status": "accepted"}, nil)
+	case len(seg) == 3 && seg[0] == "domains" && seg[2] == "dns-records":
+		switch m {
+		case "GET":
+			ok(w, 200, t.dns, nil)
+		case "POST":
+			t.dns = append(t.dns, map[string]any{"identity": fmt.Sprint(len(t.dns) + 1), "type": body["type"], "name": body["name"], "value": body["value"], "ttl": 3600})
+			ok(w, 201, map[string]any{"created": true}, nil)
+		case "DELETE":
+			out := t.dns[:0]
+			for _, r := range t.dns {
+				if !(r["type"] == body["type"] && r["name"] == body["name"] && r["value"] == body["value"]) {
+					out = append(out, r)
+				}
+			}
+			t.dns = out
+			ok(w, 200, map[string]any{"deleted": true}, nil)
+		}
+	default:
+		fail(w, 404, "endpoint_not_found", "")
+	}
+}
+
+func (a *API) appRoute(w http.ResponseWriter, m string, owner, sid int64, body map[string]any) {
+	s := a.servers[sid]
+	if s == nil || s.Owner != owner {
+		fail(w, 404, "server_not_found", "Server not found.")
+		return
+	}
+	if m == "GET" {
+		ok(w, 200, map[string]any{"server_id": sid, "install": a.T.app[sid]}, nil)
+		return
+	}
+	if body["confirm"] != true {
+		fail(w, 422, "confirm_required", "rebuilds the disk")
+		return
+	}
+	app, _ := body["app"].(string)
+	a.T.app[sid] = map[string]any{"id": 1, "app": app, "status": "hazir", "progress": 100, "url": "https://" + app + ".example", "credentials": map[string]any{"user": "admin", "password": "mockpass"}}
+	ok(w, 202, map[string]any{"server_id": sid, "status": "accepted", "install_id": 1}, nil)
 }

@@ -45,6 +45,7 @@ output "web_ipv4" {
 
 - `auto_renew` (Boolean) Renew automatically from the account's payment source.
 - `cycle` (String) Billing cycle: monthly (default), quarterly, semiannually, annually.
+- `delete_immediately` (Boolean) destroy cancels at once (default; billing stops, server powered off and wiped after the grace period). false = file a cancellation request instead.
 - `hostname` (String) Host name. Changes are applied in place (must be a FQDN when renaming).
 - `location` (String) Location code, e.g. fsn1.
 - `power_state` (String) Desired power state: running or stopped.

@@ -212,3 +212,62 @@ func (d *imagesDS) Read(ctx context.Context, req datasource.ReadRequest, resp *d
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
+
+/* ------------------------------------------------------------------ gyro_services */
+
+type servicesDS struct{ pd *providerData }
+
+func newServicesDataSource() datasource.DataSource { return &servicesDS{} }
+
+type serviceModel struct {
+	ID          types.Int64  `tfsdk:"id"`
+	ProductLine types.String `tfsdk:"product_line"`
+	Name        types.String `tfsdk:"name"`
+	Status      types.String `tfsdk:"status"`
+	Host        types.String `tfsdk:"host"`
+	IP          types.String `tfsdk:"ip"`
+	CustomerID  types.Int64  `tfsdk:"customer_id"`
+}
+
+type servicesModel struct {
+	ProductLine types.String   `tfsdk:"product_line"`
+	Services    []serviceModel `tfsdk:"services"`
+}
+
+func (d *servicesDS) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_services"
+}
+
+func (d *servicesDS) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Description: "Services of every product line (cloud_server, vds, dedicated_server, mail, monitor, storage, license, ...).",
+		Attributes: map[string]schema.Attribute{
+			"product_line": schema.StringAttribute{Optional: true},
+			"services": schema.ListNestedAttribute{Computed: true, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+				"id": schema.Int64Attribute{Computed: true}, "product_line": schema.StringAttribute{Computed: true}, "name": schema.StringAttribute{Computed: true},
+				"status": schema.StringAttribute{Computed: true}, "host": schema.StringAttribute{Computed: true}, "ip": schema.StringAttribute{Computed: true},
+				"customer_id": schema.Int64Attribute{Computed: true},
+			}}},
+		},
+	}
+}
+
+func (d *servicesDS) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+	d.pd = configureDS(req, resp)
+}
+
+func (d *servicesDS) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var m servicesModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &m)...)
+	list, err := d.pd.c.Services(ctx, m.ProductLine.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Listing services failed", err.Error())
+		return
+	}
+	m.Services = []serviceModel{}
+	for _, s := range list {
+		m.Services = append(m.Services, serviceModel{types.Int64Value(s.ID), types.StringValue(s.ProductLine), types.StringValue(s.Name), types.StringValue(s.Status),
+			types.StringPointerValue(s.Host), types.StringPointerValue(s.IP), types.Int64PointerValue(s.CustomerID)})
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
+}

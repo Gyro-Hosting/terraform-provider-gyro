@@ -137,7 +137,7 @@ func main() {
 		if !*confirm {
 			die(fmt.Errorf("delete destroys the server and its data: add --confirm"))
 		}
-		err = c.DeleteServer(ctx, id(pos[0]))
+		err = c.DeleteServer(ctx, id(pos[0]), true)
 		v = map[string]any{"cancellation_requested": err == nil}
 	default:
 		die(fmt.Errorf("unknown command %q", cmd))

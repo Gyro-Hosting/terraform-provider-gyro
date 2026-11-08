@@ -99,9 +99,9 @@ func (p *gyroProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 }
 
 func (p *gyroProvider) Resources(_ context.Context) []func() resource.Resource {
-	return []func() resource.Resource{newServerResource, newSSHKeyResource}
+	return []func() resource.Resource{newServerResource, newSSHKeyResource, newWebhookResource, newCustomerResource, newAPIKeyResource, newMailboxResource, newAliasResource, newBucketResource, newStorageKeyResource, newDNSRecordResource, newAppResource}
 }
 
 func (p *gyroProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{newProductsDataSource, newLocationsDataSource, newImagesDataSource}
+	return []func() datasource.DataSource{newProductsDataSource, newLocationsDataSource, newImagesDataSource, newServicesDataSource}
 }

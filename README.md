@@ -8,7 +8,7 @@ Manage [Gyro](https://www.gyrohosting.com) cloud servers and SSH keys with Terra
 ```hcl
 terraform {
   required_providers {
-    gyro = { source = "gyro-hosting/gyro", version = "~> 0.1" }
+    gyro = { source = "gyro-hosting/gyro", version = "~> 0.2" }
   }
 }
 
@@ -36,6 +36,10 @@ resource "gyro_server" "web" {
 | Data source | `gyro_products` | filters `location`, `server_type`, `available_only` |
 | Data source | `gyro_locations` | |
 | Data source | `gyro_images` | filter `os_flavor` |
+| Resource | `gyro_webhook` | signed HTTPS webhook; `secret` sensitive, known at creation |
+| Resource | `gyro_reseller_customer` | reseller end-customer; import by id |
+| Resource | `gyro_api_key` | sub-account / end-customer key; `token` sensitive; any change replaces |
+| Data source | `gyro_services` | every product line, filter `product_line` |
 
 ## Authentication
 

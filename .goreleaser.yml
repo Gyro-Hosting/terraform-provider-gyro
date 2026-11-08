@@ -32,6 +32,8 @@ archives:
     formats: [tar.gz]
     name_template: 'gyroctl_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
 checksum:
+  # The Registry treats every *_<os>_<arch> entry in SHA256SUMS as a provider package: keep gyroctl archives out.
+  ids: [provider]
   extra_files:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'

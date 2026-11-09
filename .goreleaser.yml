@@ -43,6 +43,8 @@ signs:
   - artifacts: checksum
     args: ["--batch", "--local-user", "{{ .Env.GPG_FINGERPRINT }}", "--output", "${signature}", "--detach-sign", "${artifact}"]
 release:
+  # Upload only provider archives: the Registry rejects a release whose *_<os>_<arch> assets are missing from SHA256SUMS.
+  ids: [provider]
   extra_files:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'

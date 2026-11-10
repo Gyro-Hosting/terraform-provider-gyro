@@ -89,6 +89,10 @@ type API struct {
 	Balance   map[int64]float64 // owner -> TRY
 	servers   map[int64]*server
 	fw        map[int64]map[string]any // server -> network firewall policy (GyroAPI 2.8.0)
+	sgs       map[string]map[string]any // security groups (GyroAPI 2.9.0)
+	sgOwner   map[string]int64
+	sgBind    map[int64][]string // server -> attached group ids
+	nextSg    int64
 	keys      map[int64]*key
 	idem      map[string]idem
 	nextSrv   int64
@@ -240,6 +244,9 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	m := r.Method
 	switch {
+	case seg[0] == "cloud" && (len(seg) >= 2 && seg[1] == "security-groups" || len(seg) >= 4 && seg[1] == "servers" && seg[3] == "security-groups"): // GyroAPI 2.9.0
+		a.securityGroups(w, m, seg, owner, body, id)
+		return
 	case len(seg) >= 5 && seg[0] == "cloud" && seg[1] == "servers" && seg[3] == "firewall" && seg[4] == "policy": // GyroAPI 2.8.0
 		if a.fw == nil {
 			a.fw = map[int64]map[string]any{}
@@ -1017,4 +1024,174 @@ func (a *API) OrderCount() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return int(a.nextSrv - 1000)
+}
+
+// ---- security groups (GyroAPI 2.9.0)
+func (a *API) securityGroups(w http.ResponseWriter, m string, seg []string, owner int64, body map[string]any, id func(int) int64) {
+	if a.sgs == nil {
+		a.sgs, a.sgOwner, a.sgBind = map[string]map[string]any{}, map[string]int64{}, map[int64][]string{}
+	}
+	rules := func(in any) ([]any, bool) {
+		rl, _ := in.([]any)
+		out := []any{}
+		for i, x := range rl {
+			r, _ := x.(map[string]any)
+			t, _ := r["type"].(string)
+			ports := map[string]string{"ssh": "22", "http": "80", "https": "443", "rdp": "3389", "mysql": "3306", "all": "all", "all_tcp": "all", "all_udp": "all", "all_icmp": "all"}
+			port, known := ports[t]
+			if t == "custom_tcp" || t == "custom_udp" {
+				port, _ = r["port"].(string)
+				known = port != ""
+			}
+			if !known {
+				return nil, false
+			}
+			src := []any{}
+			sl, _ := r["source"].([]any)
+			for _, s := range sl {
+				v, _ := s.(string)
+				if !strings.Contains(v, "/") {
+					v += "/32"
+				}
+				src = append(src, v)
+			}
+			if len(src) == 0 {
+				src = []any{"0.0.0.0/0"}
+			}
+			dir, _ := r["direction"].(string)
+			if dir == "" {
+				dir = "in"
+			}
+			d, _ := r["description"].(string)
+			out = append(out, map[string]any{"id": fmt.Sprintf("gfr-%08x", i+1), "direction": dir, "type": t, "port": port, "source": src, "description": d})
+		}
+		return out, true
+	}
+	servers := func(g string) []any {
+		o := []any{}
+		for sid, l := range a.sgBind {
+			for _, x := range l {
+				if x == g {
+					o = append(o, sid)
+				}
+			}
+		}
+		return o
+	}
+	view := func(g string) map[string]any { v := a.sgs[g]; v["servers"] = servers(g); return v }
+	if seg[1] == "servers" {
+		sv := a.servers[id(2)]
+		if sv == nil || sv.Owner != owner {
+			fail(w, 404, "server_not_found", "Server not found.")
+			return
+		}
+		cur := a.sgBind[sv.ID]
+		switch {
+		case len(seg) == 4 && m == "PUT":
+			l, _ := body["security_groups"].([]any)
+			nw := []string{}
+			for _, x := range l {
+				g, _ := x.(string)
+				if a.sgOwner[g] != owner {
+					fail(w, 404, "security_group_not_found", "Security group not found.")
+					return
+				}
+				nw = append(nw, g)
+			}
+			if len(nw) > 5 {
+				fail(w, 422, "invalid_security_groups", "max 5")
+				return
+			}
+			cur = nw
+		case len(seg) == 5 && m == "POST":
+			if a.sgOwner[seg[4]] != owner {
+				fail(w, 404, "security_group_not_found", "Security group not found.")
+				return
+			}
+			cur = append(cur, seg[4])
+		case len(seg) == 5 && m == "DELETE":
+			n := []string{}
+			for _, x := range cur {
+				if x != seg[4] {
+					n = append(n, x)
+				}
+			}
+			cur = n
+		}
+		a.sgBind[sv.ID] = cur
+		l := []any{}
+		for _, g := range cur {
+			l = append(l, map[string]any{"id": g, "name": a.sgs[g]["name"]})
+		}
+		ok(w, 200, map[string]any{"server_id": sv.ID, "max": 5, "rule_allowance": 10, "security_groups": l, "trial": false}, nil)
+		return
+	}
+	if len(seg) == 2 {
+		if m == "POST" {
+			name, _ := body["name"].(string)
+			for g, o := range a.sgOwner {
+				if o == owner && strings.EqualFold(a.sgs[g]["name"].(string), name) {
+					fail(w, 422, "err_sg_dup", "duplicate name")
+					return
+				}
+			}
+			rl := []any{map[string]any{"id": "gfr-00000000", "direction": "out", "type": "all", "port": "all", "source": []any{"0.0.0.0/0"}, "description": ""}}
+			if body["rules"] != nil {
+				var good bool
+				if rl, good = rules(body["rules"]); !good {
+					fail(w, 422, "err_sg_type", "bad rule")
+					return
+				}
+			}
+			a.nextSg++
+			g := fmt.Sprintf("sg-%08x", a.nextSg)
+			d, _ := body["description"].(string)
+			a.sgs[g], a.sgOwner[g] = map[string]any{"id": g, "name": name, "description": d, "status": "unused", "trial_seconds_left": 0, "rules": rl}, owner
+			ok(w, 201, view(g), nil)
+			return
+		}
+		l := []any{}
+		for g, o := range a.sgOwner {
+			if o == owner {
+				l = append(l, view(g))
+			}
+		}
+		ok(w, 200, l, nil)
+		return
+	}
+	g := seg[2]
+	if a.sgOwner[g] != owner {
+		fail(w, 404, "security_group_not_found", "Security group not found.")
+		return
+	}
+	switch {
+	case len(seg) == 4 && seg[3] == "rules" && m == "PUT":
+		rl, good := rules(body["rules"])
+		if !good {
+			fail(w, 422, "err_sg_type", "bad rule")
+			return
+		}
+		a.sgs[g]["rules"], a.sgs[g]["status"] = rl, "active"
+		v := view(g)
+		v["trial"] = false
+		ok(w, 200, v, nil)
+		return
+	case len(seg) == 3 && m == "PATCH":
+		if v, has := body["name"].(string); has {
+			a.sgs[g]["name"] = v
+		}
+		if v, has := body["description"].(string); has {
+			a.sgs[g]["description"] = v
+		}
+	case len(seg) == 3 && m == "DELETE":
+		if len(servers(g)) > 0 {
+			fail(w, 422, "err_sg_attached", "attached")
+			return
+		}
+		delete(a.sgs, g)
+		delete(a.sgOwner, g)
+		ok(w, 200, map[string]any{"deleted": true, "id": g}, nil)
+		return
+	}
+	ok(w, 200, view(g), nil)
 }

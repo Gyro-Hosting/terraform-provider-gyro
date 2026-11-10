@@ -1,3 +1,15 @@
+## 0.8.0 (2026-11-11)
+
+FEATURES:
+* **New resource** `gyro_security_group`: reusable, stateful allow lists for servers with the Network Firewall add-on (AWS security group model).
+  `rule` blocks with `direction` (in/out), `type` (ssh, http, https, rdp, mysql, postgresql, mssql, redis, mongodb, smtp, smtps, imaps, dns_udp, dns_tcp,
+  all_tcp, all_udp, all_icmp, all, custom_tcp, custom_udp), `port` (custom types), `source` (CIDR list, default 0.0.0.0/0) and `description`; computed
+  `rule_id`, `status` and `servers`. Renaming keeps the group. `confirm_trial` (default true) confirms a change that the API runs as a 5 minute trial
+  (could cut SSH/RDP). Import by group id (sg-xxxxxxxx).
+* **New resource** `gyro_server_security_groups`: the exact, ordered list of groups attached to a server (max 5); waits while the server applies the
+  previous change. Destroy detaches all groups. Import by server id.
+* Requires Gyro Public API 2.9.0 (`/cloud/security-groups`, `/cloud/servers/{id}/security-groups`).
+
 ## 0.7.0 (2026-11-11)
 
 FEATURES:

@@ -14,25 +14,12 @@ builds:
     ignore:
       - {goos: darwin, goarch: '386'}
     binary: '{{ .ProjectName }}_v{{ .Version }}'
-  - id: gyroctl
-    main: ./cmd/gyroctl
-    env: [CGO_ENABLED=0]
-    flags: [-trimpath]
-    ldflags: ['-s -w -X main.version={{.Version}}']
-    goos: [linux, darwin, windows]
-    goarch: [amd64, arm64]
-    binary: gyroctl
 archives:
   - id: provider
     ids: [provider]
     formats: [zip]
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
-  - id: gyroctl
-    ids: [gyroctl]
-    formats: [tar.gz]
-    name_template: 'gyroctl_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
 checksum:
-  # The Registry treats every *_<os>_<arch> entry in SHA256SUMS as a provider package: keep gyroctl archives out.
   ids: [provider]
   extra_files:
     - glob: 'terraform-registry-manifest.json'
@@ -43,8 +30,8 @@ signs:
   - artifacts: checksum
     args: ["--batch", "--local-user", "{{ .Env.GPG_FINGERPRINT }}", "--output", "${signature}", "--detach-sign", "${artifact}"]
 release:
-  # Upload only provider archives: the Registry rejects a release whose *_<os>_<arch> assets are missing from SHA256SUMS.
-  ids: [provider]
+  # gyroctl is not packaged (build it with `go build ./cmd/gyroctl`): the Registry treats every *_<os>_<arch> asset as a
+  # provider package. Do not set release.ids here: it also drops the SHA256SUMS.sig upload (v0.3.0 had to be fixed by hand).
   extra_files:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'

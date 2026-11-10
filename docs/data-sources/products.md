@@ -3,22 +3,23 @@
 page_title: "gyro_products Data Source - gyro"
 subcategory: ""
 description: |-
-  Orderable cloud server products.
+  Orderable server products. Order one with gyro_server using its id (product_id) or its plan + region.
 ---
 
 # gyro_products (Data Source)
 
-Orderable cloud server products.
+Orderable server products. Order one with gyro_server using its id (product_id) or its plan + region.
 
 ## Example Usage
 
 ```terraform
-data "gyro_products" "dedicated_fsn" {
-  location = "fsn1"
+data "gyro_products" "frankfurt_area" {
+  region         = "eu-de-1"
+  available_only = true
 }
 
-output "cheapest" {
-  value = [for p in data.gyro_products.dedicated_fsn.products : "${p.name}: ${p.monthly_price} ${p.currency}" if p.available]
+output "plans" {
+  value = [for p in data.gyro_products.frankfurt_area.products : "${p.plan} (${p.name}): ${p.monthly_price} ${p.currency}"]
 }
 ```
 
@@ -28,8 +29,10 @@ output "cheapest" {
 ### Optional
 
 - `available_only` (Boolean) Only products in stock (default false).
-- `location` (String) Filter by location code.
-- `server_type` (String) Filter by server type.
+- `location` (String, Deprecated) Deprecated: legacy location filter. Use region.
+- `plan` (String) Only products with this plan name, e.g. standart-2-4.
+- `region` (String) Only products in this region, e.g. eu-de-1 (see gyro_locations).
+- `server_type` (String, Deprecated) Deprecated: legacy product code filter. Use plan.
 
 ### Read-Only
 
@@ -42,12 +45,15 @@ Read-Only:
 
 - `available` (Boolean)
 - `cores` (Number)
-- `cpu_type` (String)
+- `cpu_type` (String) shared or dedicated.
 - `currency` (String)
 - `disk_gb` (Number)
-- `id` (Number)
-- `location` (String)
+- `id` (Number) Product id (gyro_server.product_id).
+- `location` (String) Deprecated: legacy location code. Use region.
 - `memory_gb` (Number)
-- `monthly_price` (Number)
-- `name` (String)
-- `server_type` (String)
+- `monthly_price` (Number) Monthly price (VAT excluded).
+- `name` (String) Display name, e.g. Gyro Bulut Standart 2-4.
+- `plan` (String) Plan name (gyro_server.plan), e.g. standart-2-4.
+- `product_line` (String) cloud_server (global cloud) or vds (Istanbul VDS).
+- `region` (String) Region (gyro_server.region), e.g. eu-de-1.
+- `server_type` (String) Deprecated: legacy product code. Use plan.

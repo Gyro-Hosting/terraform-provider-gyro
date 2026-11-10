@@ -60,8 +60,8 @@ func TestAccMockServerLifecycle(t *testing.T) {
 	var serverID int64
 	cfg := func(host, power string) string {
 		return prov + fmt.Sprintf(`
-data "gyro_products" "fsn" {
-  location       = "fsn1"
+data "gyro_products" "de" {
+  region         = "eu-de-1"
   available_only = true
 }
 data "gyro_locations" "all" {}
@@ -73,8 +73,8 @@ resource "gyro_ssh_key" "me" {
 }
 
 resource "gyro_server" "web" {
-  server_type   = "cx23"
-  location      = "fsn1"
+  plan          = "eko-2-4"
+  region        = "eu-de-1"
   image         = data.gyro_images.debian.images[0].slug
   hostname      = %q
   ssh_key_ids   = [tonumber(gyro_ssh_key.me.id)]
@@ -99,13 +99,20 @@ resource "gyro_server" "web" {
 			{
 				Config: cfg("web-1.example.com", "running"),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("data.gyro_products.fsn", "products.#", "2"),
+					resource.TestCheckResourceAttr("data.gyro_products.de", "products.#", "2"),
+					resource.TestCheckResourceAttr("data.gyro_products.de", "products.0.plan", "eko-2-4"),
+					resource.TestCheckResourceAttr("data.gyro_products.de", "products.0.region", "eu-de-1"),
 					resource.TestCheckResourceAttr("data.gyro_locations.all", "locations.#", "2"),
+					resource.TestCheckResourceAttr("data.gyro_locations.all", "locations.0.region", "eu-de-1"),
 					resource.TestCheckResourceAttr("data.gyro_images.debian", "images.0.slug", "debian-12"),
 					resource.TestCheckResourceAttrSet("gyro_ssh_key.me", "fingerprint"),
 					resource.TestCheckResourceAttr("gyro_server.web", "status", "active"),
 					resource.TestCheckResourceAttr("gyro_server.web", "power_state", "running"),
 					resource.TestCheckResourceAttr("gyro_server.web", "product_id", "723"),
+					resource.TestCheckResourceAttr("gyro_server.web", "plan", "eko-2-4"),
+					resource.TestCheckResourceAttr("gyro_server.web", "region", "eu-de-1"),
+					resource.TestCheckResourceAttr("gyro_server.web", "server_type", "lg-e24"),
+					resource.TestCheckResourceAttr("gyro_server.web", "location", "dc-a"),
 					resource.TestCheckResourceAttr("gyro_server.web", "cores", "2"),
 					resource.TestCheckResourceAttrSet("gyro_server.web", "ipv4"),
 					func(s *terraform.State) error {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Gyro-Hosting/terraform-provider-gyro/internal/client"
+
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -29,6 +31,9 @@ func newProductsDataSource() datasource.DataSource { return &productsDS{} }
 type productModel struct {
 	ID           types.Int64   `tfsdk:"id"`
 	Name         types.String  `tfsdk:"name"`
+	Plan         types.String  `tfsdk:"plan"`
+	Region       types.String  `tfsdk:"region"`
+	ProductLine  types.String  `tfsdk:"product_line"`
 	ServerType   types.String  `tfsdk:"server_type"`
 	Location     types.String  `tfsdk:"location"`
 	Cores        types.Int64   `tfsdk:"cores"`
@@ -41,6 +46,8 @@ type productModel struct {
 }
 
 type productsModel struct {
+	Region        types.String   `tfsdk:"region"`
+	Plan          types.String   `tfsdk:"plan"`
 	Location      types.String   `tfsdk:"location"`
 	ServerType    types.String   `tfsdk:"server_type"`
 	AvailableOnly types.Bool     `tfsdk:"available_only"`
@@ -53,17 +60,26 @@ func (d *productsDS) Metadata(_ context.Context, req datasource.MetadataRequest,
 
 func (d *productsDS) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Orderable cloud server products.",
+		Description: "Orderable server products. Order one with gyro_server using its id (product_id) or its plan + region.",
 		Attributes: map[string]schema.Attribute{
-			"location":       schema.StringAttribute{Optional: true, Description: "Filter by location code."},
-			"server_type":    schema.StringAttribute{Optional: true, Description: "Filter by server type."},
+			"region": schema.StringAttribute{Optional: true, Description: "Only products in this region, e.g. eu-de-1 (see gyro_locations)."},
+			"plan":   schema.StringAttribute{Optional: true, Description: "Only products with this plan name, e.g. standart-2-4."},
+			"location": schema.StringAttribute{Optional: true, Description: "Deprecated: legacy location filter. Use region.",
+				DeprecationMessage: "location is deprecated; use region instead."},
+			"server_type": schema.StringAttribute{Optional: true, Description: "Deprecated: legacy product code filter. Use plan.",
+				DeprecationMessage: "server_type is deprecated; use plan instead."},
 			"available_only": schema.BoolAttribute{Optional: true, Description: "Only products in stock (default false)."},
 			"products": schema.ListNestedAttribute{Computed: true, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
-				"id": schema.Int64Attribute{Computed: true}, "name": schema.StringAttribute{Computed: true},
-				"server_type": schema.StringAttribute{Computed: true}, "location": schema.StringAttribute{Computed: true},
-				"cores": schema.Int64Attribute{Computed: true}, "memory_gb": schema.Float64Attribute{Computed: true},
-				"disk_gb": schema.Int64Attribute{Computed: true}, "cpu_type": schema.StringAttribute{Computed: true},
-				"available": schema.BoolAttribute{Computed: true}, "monthly_price": schema.Float64Attribute{Computed: true},
+				"id":           schema.Int64Attribute{Computed: true, Description: "Product id (gyro_server.product_id)."},
+				"name":         schema.StringAttribute{Computed: true, Description: "Display name, e.g. Gyro Bulut Standart 2-4."},
+				"plan":         schema.StringAttribute{Computed: true, Description: "Plan name (gyro_server.plan), e.g. standart-2-4."},
+				"region":       schema.StringAttribute{Computed: true, Description: "Region (gyro_server.region), e.g. eu-de-1."},
+				"product_line": schema.StringAttribute{Computed: true, Description: "cloud_server (global cloud) or vds (Istanbul VDS)."},
+				"server_type":  schema.StringAttribute{Computed: true, Description: "Deprecated: legacy product code. Use plan."},
+				"location":     schema.StringAttribute{Computed: true, Description: "Deprecated: legacy location code. Use region."},
+				"cores":        schema.Int64Attribute{Computed: true}, "memory_gb": schema.Float64Attribute{Computed: true},
+				"disk_gb": schema.Int64Attribute{Computed: true}, "cpu_type": schema.StringAttribute{Computed: true, Description: "shared or dedicated."},
+				"available": schema.BoolAttribute{Computed: true}, "monthly_price": schema.Float64Attribute{Computed: true, Description: "Monthly price (VAT excluded)."},
 				"currency": schema.StringAttribute{Computed: true},
 			}}},
 		},
@@ -80,7 +96,8 @@ func (d *productsDS) Read(ctx context.Context, req datasource.ReadRequest, resp 
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	list, err := d.pd.c.Products(ctx, m.Location.ValueString(), m.ServerType.ValueString())
+	list, err := d.pd.c.Products(ctx, client.ProductFilter{Region: m.Region.ValueString(), Plan: m.Plan.ValueString(),
+		Location: m.Location.ValueString(), ServerType: m.ServerType.ValueString()})
 	if err != nil {
 		resp.Diagnostics.AddError("Listing products failed", err.Error())
 		return
@@ -90,7 +107,8 @@ func (d *productsDS) Read(ctx context.Context, req datasource.ReadRequest, resp 
 		if m.AvailableOnly.ValueBool() && !p.Available {
 			continue
 		}
-		pm := productModel{ID: types.Int64Value(p.ID), Name: types.StringValue(p.Name), ServerType: types.StringValue(p.ServerType),
+		pm := productModel{ID: types.Int64Value(p.ID), Name: types.StringValue(p.Name), Plan: types.StringValue(p.Plan),
+			Region: types.StringValue(p.Region), ProductLine: types.StringValue(p.ProductLine), ServerType: types.StringValue(p.ServerType),
 			Location: types.StringValue(p.Location), Cores: types.Int64PointerValue(p.Cores), MemoryGB: types.Float64PointerValue(p.MemoryGB),
 			DiskGB: types.Int64PointerValue(p.DiskGB), CPUType: types.StringPointerValue(p.CPUType), Available: types.BoolValue(p.Available),
 			MonthlyPrice: types.Float64Null(), Currency: types.StringNull()}
@@ -112,6 +130,7 @@ type locationsDS struct{ pd *providerData }
 func newLocationsDataSource() datasource.DataSource { return &locationsDS{} }
 
 type locationModel struct {
+	Region  types.String `tfsdk:"region"`
 	Code    types.String `tfsdk:"code"`
 	City    types.String `tfsdk:"city"`
 	Country types.String `tfsdk:"country"`
@@ -128,11 +147,13 @@ func (d *locationsDS) Metadata(_ context.Context, req datasource.MetadataRequest
 
 func (d *locationsDS) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Locations that have orderable products.",
+		Description: "Regions that have orderable products.",
 		Attributes: map[string]schema.Attribute{
 			"locations": schema.ListNestedAttribute{Computed: true, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
-				"code": schema.StringAttribute{Computed: true}, "city": schema.StringAttribute{Computed: true},
-				"country": schema.StringAttribute{Computed: true}, "zone": schema.StringAttribute{Computed: true},
+				"region": schema.StringAttribute{Computed: true, Description: "Region name (gyro_server.region), e.g. eu-de-1, tr-ist-1."},
+				"code":   schema.StringAttribute{Computed: true, Description: "Deprecated: legacy location code. Use region."},
+				"city":   schema.StringAttribute{Computed: true}, "country": schema.StringAttribute{Computed: true, Description: "ISO country code."},
+				"zone": schema.StringAttribute{Computed: true},
 			}}},
 		},
 	}
@@ -150,7 +171,7 @@ func (d *locationsDS) Read(ctx context.Context, req datasource.ReadRequest, resp
 	}
 	m := locationsModel{Locations: []locationModel{}}
 	for _, l := range list {
-		m.Locations = append(m.Locations, locationModel{types.StringValue(l.Code), types.StringValue(l.City), types.StringValue(l.Country), types.StringValue(l.Zone)})
+		m.Locations = append(m.Locations, locationModel{types.StringValue(l.Region), types.StringValue(l.Code), types.StringValue(l.City), types.StringValue(l.Country), types.StringValue(l.Zone)})
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }

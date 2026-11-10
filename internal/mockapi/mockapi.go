@@ -19,6 +19,7 @@ type server struct {
 	Owner     int64
 	ProductID int64
 	Type, Loc string
+	Plan, Reg string
 	Image     string
 	Hostname  string
 	Status    string // inprocess -> active, cancelled
@@ -115,12 +116,35 @@ func New() *API {
 }
 
 var products = []map[string]any{
-	{"id": 723, "name": "Gyro Bulut Eko 2-4", "server_type": "cx23", "location": "fsn1", "cores": 2, "memory_gb": 4, "disk_gb": 40, "cpu_type": "shared", "architecture": "x86", "traffic_tb": 20, "ipv4": true, "ipv6": true, "available": true,
+	{"id": 723, "name": "Gyro Bulut Eko 2-4", "plan": "eko-2-4", "region": "eu-de-1", "product_line": "cloud_server", "server_type": "lg-e24", "location": "dc-a", "cores": 2, "memory_gb": 4, "disk_gb": 40, "cpu_type": "shared", "architecture": "x86", "traffic_tb": 20, "ipv4": true, "ipv6": true, "available": true,
 		"prices": []map[string]any{{"cycle": "monthly", "amount": 553.49, "setup": 0, "currency": "TRY"}}},
-	{"id": 656, "name": "Gyro Bulut Pro 2-8", "server_type": "ccx13", "location": "fsn1", "cores": 2, "memory_gb": 8, "disk_gb": 80, "cpu_type": "dedicated", "architecture": "x86", "traffic_tb": 20, "ipv4": true, "ipv6": true, "available": true,
+	{"id": 656, "name": "Gyro Bulut Pro 2-8", "plan": "pro-2-8", "region": "eu-de-1", "product_line": "cloud_server", "server_type": "lg-p28", "location": "dc-a", "cores": 2, "memory_gb": 8, "disk_gb": 80, "cpu_type": "dedicated", "architecture": "x86", "traffic_tb": 20, "ipv4": true, "ipv6": true, "available": true,
 		"prices": []map[string]any{{"cycle": "monthly", "amount": 4015.99, "setup": 0, "currency": "TRY"}}},
-	{"id": 687, "name": "Gyro Bulut Standart 1-1", "server_type": "cpx02", "location": "hel1", "cores": 1, "memory_gb": 1, "disk_gb": 20, "cpu_type": "shared", "architecture": "x86", "traffic_tb": 20, "ipv4": true, "ipv6": true, "available": false,
+	{"id": 687, "name": "Gyro Bulut Standart 1-1", "plan": "standart-1-1", "region": "eu-fi-1", "product_line": "cloud_server", "server_type": "lg-s11", "location": "dc-c", "cores": 1, "memory_gb": 1, "disk_gb": 20, "cpu_type": "shared", "architecture": "x86", "traffic_tb": 20, "ipv4": true, "ipv6": true, "available": false,
 		"prices": []map[string]any{{"cycle": "monthly", "amount": 599.49, "setup": 0, "currency": "TRY"}}},
+}
+
+// regionCity mirrors the API: a region may also be given by its city name.
+var regionCity = map[string]string{"eu-de-1": "falkenstein", "eu-fi-1": "helsinki"}
+
+// matchesPlan: the API accepts plan or the legacy server_type, and either value in either field.
+func matchesPlan(p, body map[string]any) bool {
+	for _, k := range []string{"plan", "server_type"} {
+		if v, _ := body[k].(string); v != "" {
+			return v == p["plan"] || v == p["server_type"]
+		}
+	}
+	return false
+}
+
+// matchesRegion: region, legacy location or city name, in either field.
+func matchesRegion(p, body map[string]any) bool {
+	for _, k := range []string{"region", "location"} {
+		if v, _ := body[k].(string); v != "" {
+			return v == p["region"] || v == p["location"] || strings.EqualFold(regionCity[p["region"].(string)], v)
+		}
+	}
+	return false
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -146,7 +170,7 @@ func ok(w http.ResponseWriter, status int, data any, meta map[string]any) {
 func (a *API) srvJSON(s *server, live bool) map[string]any {
 	ip := fmt.Sprintf("192.0.2.%d", s.ID%250)
 	out := map[string]any{"id": s.ID, "name": "Gyro Bulut", "hostname": s.Hostname, "status": s.Status, "product_id": s.ProductID,
-		"server_type": s.Type, "location": s.Loc, "ipv4": nil, "ipv6": nil, "provisioned": s.Status == "active" || s.Status == "cancelled",
+		"plan": s.Plan, "region": s.Reg, "server_type": s.Type, "location": s.Loc, "ipv4": nil, "ipv6": nil, "provisioned": s.Status == "active" || s.Status == "cancelled",
 		"cycle": s.Cycle, "price": map[string]any{"amount": 553.49, "currency": "TRY"}, "auto_renew": s.AutoRenew,
 		"created_at": "2026-11-09T01:10:44+03:00", "due_date": "2026-12-09", "cancellation": nil}
 	if s.Cancel != "" {
@@ -160,7 +184,7 @@ func (a *API) srvJSON(s *server, live bool) map[string]any {
 		if s.Status == "active" {
 			out["live"] = map[string]any{"power_state": s.Power, "locked": false, "rescue_enabled": false, "backups_enabled": false,
 				"ipv4": ip, "ipv6_network": "2001:db8::/64", "cores": 2, "memory_gb": 4, "disk_gb": 40, "image": s.Image, "image_name": s.Image,
-				"location": s.Loc, "traffic": map[string]any{"outgoing_bytes": 0, "included_bytes": 21990232555520}}
+				"region": s.Reg, "location": s.Loc, "traffic": map[string]any{"outgoing_bytes": 0, "included_bytes": 21990232555520}}
 		} else {
 			out["live"] = nil
 		}
@@ -218,17 +242,24 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case m == "GET" && path == "cloud/products":
 		var out []map[string]any
 		for _, p := range products {
-			if l := r.URL.Query().Get("location"); l != "" && p["location"] != l {
+			q := r.URL.Query()
+			if l := q.Get("location"); l != "" && p["location"] != l && p["region"] != l {
 				continue
 			}
-			if t := r.URL.Query().Get("server_type"); t != "" && p["server_type"] != t {
+			if t := q.Get("server_type"); t != "" && p["server_type"] != t && p["plan"] != t {
+				continue
+			}
+			if l := q.Get("region"); l != "" && p["region"] != l && p["location"] != l && !strings.EqualFold(regionCity[p["region"].(string)], l) {
+				continue
+			}
+			if t := q.Get("plan"); t != "" && p["plan"] != t && p["server_type"] != t {
 				continue
 			}
 			out = append(out, p)
 		}
 		ok(w, 200, out, map[string]any{"total": len(out), "page": 1, "limit": 100, "next_page": 0})
 	case m == "GET" && path == "cloud/locations":
-		ok(w, 200, []map[string]any{{"code": "fsn1", "city": "Falkenstein", "country": "DE", "zone": "eu-central", "products": 2}, {"code": "hel1", "city": "Helsinki", "country": "FI", "zone": "eu-central", "products": 1}}, nil)
+		ok(w, 200, []map[string]any{{"region": "eu-de-1", "code": "dc-a", "city": "Falkenstein", "country": "DE", "zone": "eu-central", "products": 2}, {"region": "eu-fi-1", "code": "dc-c", "city": "Helsinki", "country": "FI", "zone": "eu-central", "products": 1}}, nil)
 	case m == "GET" && path == "cloud/images":
 		ok(w, 200, []map[string]any{{"slug": "debian-12", "name": "Debian 12", "os_flavor": "debian"}, {"slug": "ubuntu-24.04", "name": "Ubuntu 24.04", "os_flavor": "ubuntu"}}, nil)
 	case m == "GET" && path == "balance":
@@ -334,12 +365,12 @@ func (a *API) create(w http.ResponseWriter, r *http.Request, owner int64, body m
 	}
 	var prod map[string]any
 	for _, p := range products {
-		if (pid > 0 && int64(p["id"].(int)) == pid) || (pid == 0 && p["server_type"] == body["server_type"] && p["location"] == body["location"]) {
+		if (pid > 0 && int64(p["id"].(int)) == pid) || (pid == 0 && matchesPlan(p, body) && matchesRegion(p, body)) {
 			prod = p
 		}
 	}
 	if prod == nil {
-		fail(w, 422, "product_not_orderable", "product_id (or server_type + location) must name an orderable product.")
+		fail(w, 422, "product_not_orderable", "product_id (or plan + region) must name an orderable product.")
 		return
 	}
 	if !prod["available"].(bool) {
@@ -385,6 +416,7 @@ func (a *API) create(w http.ResponseWriter, r *http.Request, owner int64, body m
 		cycle = "monthly"
 	}
 	s := &server{ID: a.nextSrv, Owner: owner, ProductID: int64(prod["id"].(int)), Type: prod["server_type"].(string), Loc: prod["location"].(string),
+		Plan: prod["plan"].(string), Reg: prod["region"].(string),
 		Image: img, Hostname: host, Status: "inprocess", Power: "running", Polls: a.ProvisionPolls, Cycle: cycle}
 	a.servers[s.ID] = s
 	a.nextSrv++
@@ -845,4 +877,11 @@ func (a *API) appRoute(w http.ResponseWriter, m string, owner, sid int64, body m
 	app, _ := body["app"].(string)
 	a.T.app[sid] = map[string]any{"id": 1, "app": app, "status": "hazir", "progress": 100, "url": "https://" + app + ".example", "credentials": map[string]any{"user": "admin", "password": "mockpass"}}
 	ok(w, 202, map[string]any{"server_id": sid, "status": "accepted", "install_id": 1}, nil)
+}
+
+// OrderCount is the number of servers ordered so far (every successful paid order).
+func (a *API) OrderCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return int(a.nextSrv - 1000)
 }

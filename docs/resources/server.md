@@ -3,29 +3,37 @@
 page_title: "gyro_server Resource - gyro"
 subcategory: ""
 description: |-
-  A Gyro cloud server. Creating one places an order that is paid from the account balance (confirm_order must be true). Destroying it requests cancellation; the machine and its data are wiped after the grace period.
+  A Gyro cloud server. Creating one places an order that is paid from the account balance (confirm_order must be true). Pick the product with product_id, or with plan + region (see gyro_products and gyro_locations). Destroying it cancels the service (see delete_immediately); the machine and its data are wiped after the grace period.
 ---
 
 # gyro_server (Resource)
 
-A Gyro cloud server. Creating one places an order that is paid from the account balance (confirm_order must be true). Destroying it requests cancellation; the machine and its data are wiped after the grace period.
+A Gyro cloud server. Creating one places an order that is paid from the account balance (confirm_order must be true). Pick the product with product_id, or with plan + region (see gyro_products and gyro_locations). Destroying it cancels the service (see delete_immediately); the machine and its data are wiped after the grace period.
 
 ## Example Usage
 
 ```terraform
-data "gyro_products" "small" {
-  location       = "fsn1"
-  server_type    = "cx23"
-  available_only = true
-}
-
+# Pick a product by plan + region (see gyro_products / gyro_locations) ...
 resource "gyro_server" "web" {
-  product_id    = data.gyro_products.small.products[0].id
+  plan          = "standart-2-4"
+  region        = "eu-de-1"
   image         = "debian-12"
   hostname      = "web-1.example.com"
   ssh_key_ids   = [tonumber(gyro_ssh_key.laptop.id)]
   power_state   = "running"
   confirm_order = true # creating a server is a paid order from your account balance
+}
+
+# ... or by product id from the catalog, e.g. the first product in stock in Helsinki.
+data "gyro_products" "helsinki" {
+  region         = "eu-fi-1"
+  available_only = true
+}
+
+resource "gyro_server" "db" {
+  product_id    = data.gyro_products.helsinki.products[0].id
+  image         = "ubuntu-24.04"
+  confirm_order = true
 }
 
 output "web_ipv4" {
@@ -47,10 +55,12 @@ output "web_ipv4" {
 - `cycle` (String) Billing cycle: monthly (default), quarterly, semiannually, annually.
 - `delete_immediately` (Boolean) destroy cancels at once (default; billing stops, server powered off and wiped after the grace period). false = file a cancellation request instead.
 - `hostname` (String) Host name. Changes are applied in place (must be a FQDN when renaming).
-- `location` (String) Location code, e.g. fsn1.
+- `location` (String, Deprecated) Deprecated: legacy location code, kept so existing configurations and state keep working. Use region.
+- `plan` (String) Plan name from gyro_products, e.g. standart-2-4. Use together with region. Changing it replaces the server.
 - `power_state` (String) Desired power state: running or stopped.
-- `product_id` (Number) Product from gyro_products. Alternative to server_type + location.
-- `server_type` (String) Server type, e.g. cx23.
+- `product_id` (Number) Product id from gyro_products. Alternative to plan + region.
+- `region` (String) Region from gyro_locations, e.g. eu-de-1 or tr-ist-1. Use together with plan. Changing it replaces the server.
+- `server_type` (String, Deprecated) Deprecated: legacy product code, kept so existing configurations and state keep working. Use plan.
 - `ssh_key_ids` (List of Number) gyro_ssh_key ids to install at creation (max 1 in API v1).
 - `user_data` (String, Sensitive) cloud-init user data (max 32 KiB).
 

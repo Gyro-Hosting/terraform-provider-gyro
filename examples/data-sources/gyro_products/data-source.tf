@@ -1,7 +1,8 @@
-data "gyro_products" "dedicated_fsn" {
-  location = "fsn1"
+data "gyro_products" "frankfurt_area" {
+  region         = "eu-de-1"
+  available_only = true
 }
 
-output "cheapest" {
-  value = [for p in data.gyro_products.dedicated_fsn.products : "${p.name}: ${p.monthly_price} ${p.currency}" if p.available]
+output "plans" {
+  value = [for p in data.gyro_products.frankfurt_area.products : "${p.plan} (${p.name}): ${p.monthly_price} ${p.currency}"]
 }

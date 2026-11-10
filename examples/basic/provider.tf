@@ -2,7 +2,7 @@ terraform {
   required_providers {
     gyro = {
       source  = "gyro-hosting/gyro"
-      version = "~> 0.2"
+      version = "~> 0.3"
     }
   }
 }

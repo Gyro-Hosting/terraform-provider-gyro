@@ -1,7 +1,7 @@
 // gyroctl: minimal command line client for the Gyro Public API v1.
 //
 //	export GYRO_TOKEN=wck_...            # client API key
-//	gyroctl products [--location fsn1]   gyroctl images | locations | balance | invoices
+//	gyroctl products [--region eu-de-1]   gyroctl images | locations | balance | invoices
 //	gyroctl servers                      gyroctl server <id>
 //	gyroctl action <id> <poweron|shutdown|reboot|poweroff|reset|rebuild|reset_password|enable_rescue|disable_rescue> [--image slug] [--confirm]
 //	gyroctl ssh-keys                     gyroctl ssh-key-add <name> <public-key-file>   gyroctl ssh-key-rm <id>
@@ -57,7 +57,8 @@ func main() {
 	defer cancel()
 	cmd, args := os.Args[1], os.Args[2:]
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
-	loc := fs.String("location", "", "location filter")
+	loc := fs.String("region", "", "region filter, e.g. eu-de-1")
+	fs.StringVar(loc, "location", "", "deprecated alias of --region")
 	image := fs.String("image", "", "image slug")
 	host := fs.String("hostname", "", "hostname")
 	prod := fs.Int64("product", 0, "product id")
@@ -84,7 +85,7 @@ func main() {
 	var err error
 	switch cmd {
 	case "products":
-		v, err = c.Products(ctx, *loc, "")
+		v, err = c.Products(ctx, client.ProductFilter{Region: *loc})
 	case "locations":
 		v, err = c.Locations(ctx)
 	case "images":

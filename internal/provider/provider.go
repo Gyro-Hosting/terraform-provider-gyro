@@ -47,7 +47,7 @@ func (p *gyroProvider) Metadata(_ context.Context, _ provider.MetadataRequest, r
 
 func (p *gyroProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manage Gyro (gyrohosting.com) cloud servers and SSH keys through the Gyro Public API v1.",
+		Description: "Manage Gyro (gyrohosting.com) cloud servers, SSH keys, mail, object storage, DNS records and more through the Gyro Public API. Servers are chosen by plan (e.g. standart-2-4) and region (e.g. eu-de-1).",
 		Attributes: map[string]schema.Attribute{
 			"endpoint": schema.StringAttribute{
 				Optional:    true,

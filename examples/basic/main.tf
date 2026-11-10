@@ -2,14 +2,10 @@ resource "gyro_ssh_key" "laptop" {
   name       = "laptop"
   public_key = file("~/.ssh/id_ed25519.pub")
 }
-data "gyro_products" "small" {
-  location       = "fsn1"
-  server_type    = "cx23"
-  available_only = true
-}
 
 resource "gyro_server" "web" {
-  product_id    = data.gyro_products.small.products[0].id
+  plan          = "standart-2-4"
+  region        = "eu-de-1"
   image         = "debian-12"
   hostname      = "web-1.example.com"
   ssh_key_ids   = [tonumber(gyro_ssh_key.laptop.id)]

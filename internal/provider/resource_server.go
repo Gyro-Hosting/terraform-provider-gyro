@@ -32,6 +32,8 @@ func newServerResource() resource.Resource { return &serverResource{} }
 type serverModel struct {
 	ID           types.String  `tfsdk:"id"`
 	ProductID    types.Int64   `tfsdk:"product_id"`
+	Plan         types.String  `tfsdk:"plan"`
+	Region       types.String  `tfsdk:"region"`
 	ServerType   types.String  `tfsdk:"server_type"`
 	Location     types.String  `tfsdk:"location"`
 	Cycle        types.String  `tfsdk:"cycle"`
@@ -64,15 +66,27 @@ func (r *serverResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 	}
 	resp.Schema = schema.Schema{
 		Description: "A Gyro cloud server. Creating one places an order that is paid from the account balance " +
-			"(confirm_order must be true). Destroying it requests cancellation; the machine and its data are wiped after the grace period.",
+			"(confirm_order must be true). Pick the product with product_id, or with plan + region (see gyro_products and gyro_locations). " +
+			"Destroying it cancels the service (see delete_immediately); the machine and its data are wiped after the grace period.",
 		Attributes: map[string]schema.Attribute{
 			"id": str("Server id (service id in the client area)."),
-			"product_id": schema.Int64Attribute{Optional: true, Computed: true, Description: "Product from gyro_products. Alternative to server_type + location.",
+			"product_id": schema.Int64Attribute{Optional: true, Computed: true,
+				Description:   "Product id from gyro_products. Alternative to plan + region.",
 				PlanModifiers: []planmodifier.Int64{int64planmodifier.RequiresReplaceIfConfigured(), int64planmodifier.UseStateForUnknown()}},
-			"server_type": schema.StringAttribute{Optional: true, Computed: true, Description: "Server type, e.g. cx23.",
+			"plan": schema.StringAttribute{Optional: true, Computed: true,
+				Description:   "Plan name from gyro_products, e.g. standart-2-4. Use together with region. Changing it replaces the server.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIfConfigured(), stringplanmodifier.UseStateForUnknown()}},
-			"location": schema.StringAttribute{Optional: true, Computed: true, Description: "Location code, e.g. fsn1.",
+			"region": schema.StringAttribute{Optional: true, Computed: true,
+				Description:   "Region from gyro_locations, e.g. eu-de-1 or tr-ist-1. Use together with plan. Changing it replaces the server.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIfConfigured(), stringplanmodifier.UseStateForUnknown()}},
+			"server_type": schema.StringAttribute{Optional: true, Computed: true,
+				Description:        "Deprecated: legacy product code, kept so existing configurations and state keep working. Use plan.",
+				DeprecationMessage: "server_type is deprecated and will be removed in a future major version. Use plan (see gyro_products) instead; switching does not replace the server.",
+				PlanModifiers:      []planmodifier.String{stringplanmodifier.RequiresReplaceIfConfigured(), stringplanmodifier.UseStateForUnknown()}},
+			"location": schema.StringAttribute{Optional: true, Computed: true,
+				Description:        "Deprecated: legacy location code, kept so existing configurations and state keep working. Use region.",
+				DeprecationMessage: "location is deprecated and will be removed in a future major version. Use region (see gyro_locations) instead; switching does not replace the server.",
+				PlanModifiers:      []planmodifier.String{stringplanmodifier.RequiresReplaceIfConfigured(), stringplanmodifier.UseStateForUnknown()}},
 			"cycle": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("monthly"),
 				Description:   "Billing cycle: monthly (default), quarterly, semiannually, annually.",
 				Validators:    []validator.String{stringvalidator.OneOf("monthly", "quarterly", "semiannually", "annually")},
@@ -123,13 +137,31 @@ func sp(s *string) types.String {
 	return types.StringValue(*s)
 }
 
+// keepKnown fills an immutable attribute from the API unless state already holds a value for it.
+func keepKnown(dst *types.String, api *string) {
+	if dst.IsNull() || dst.IsUnknown() || dst.ValueString() == "" {
+		*dst = sp(api)
+	}
+}
+
 // apply copies API state into the model. Arguments that the API cannot echo back (image after a
 // snapshot restore, user_data, ssh_key_ids, confirm_order) keep their configured values.
+//
+// plan, region, server_type and location are immutable (changing them replaces the server). The API accepts
+// aliases for them (a region in location, a city name in region, ...) and answers with canonical values, so a
+// value that is already known in state is kept: overwriting it with the canonical form would show up as a diff
+// against the configuration and force a replacement. Empty values (create without them, import, state written
+// by an older provider version) are filled from the API.
 func apply(m *serverModel, s *client.Server) {
 	m.ID = types.StringValue(strconv.FormatInt(s.ID, 10))
 	m.ProductID = types.Int64Value(s.ProductID)
-	m.ServerType = sp(s.ServerType)
-	m.Location = sp(s.Location)
+	keepKnown(&m.Plan, s.Plan)
+	keepKnown(&m.Region, s.Region)
+	if s.Region == nil && s.Live != nil {
+		keepKnown(&m.Region, s.Live.Region)
+	}
+	keepKnown(&m.ServerType, s.ServerType)
+	keepKnown(&m.Location, s.Location)
 	if s.Cycle != "" {
 		m.Cycle = types.StringValue(s.Cycle)
 	}
@@ -180,12 +212,13 @@ func (r *serverResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 	in := client.CreateServerRequest{
-		ProductID: m.ProductID.ValueInt64(), ServerType: m.ServerType.ValueString(), Location: m.Location.ValueString(),
+		ProductID: m.ProductID.ValueInt64(), Plan: m.Plan.ValueString(), Region: m.Region.ValueString(),
+		ServerType: m.ServerType.ValueString(), Location: m.Location.ValueString(),
 		Cycle: m.Cycle.ValueString(), Image: m.Image.ValueString(), Hostname: m.Hostname.ValueString(),
 		UserData: m.UserData.ValueString(), Confirm: true,
 	}
-	if in.ProductID == 0 && (in.ServerType == "" || in.Location == "") {
-		resp.Diagnostics.AddError("Missing product", "Set product_id, or both server_type and location.")
+	if in.ProductID == 0 && ((in.Plan == "" && in.ServerType == "") || (in.Region == "" && in.Location == "")) {
+		resp.Diagnostics.AddError("Missing product", "Set product_id, or both plan and region.")
 		return
 	}
 	if !m.SSHKeyIDs.IsNull() && !m.SSHKeyIDs.IsUnknown() {

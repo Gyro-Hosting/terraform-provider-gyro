@@ -207,8 +207,11 @@ type Price struct {
 type Product struct {
 	ID           int64    `json:"id"`
 	Name         string   `json:"name"`
-	ServerType   string   `json:"server_type"`
-	Location     string   `json:"location"`
+	Plan         string   `json:"plan"`
+	Region       string   `json:"region"`
+	ProductLine  string   `json:"product_line"`
+	ServerType   string   `json:"server_type"` // deprecated legacy code, use Plan
+	Location     string   `json:"location"`    // deprecated legacy code, use Region
 	Cores        *int64   `json:"cores"`
 	MemoryGB     *float64 `json:"memory_gb"`
 	DiskGB       *int64   `json:"disk_gb"`
@@ -222,7 +225,8 @@ type Product struct {
 }
 
 type Location struct {
-	Code     string `json:"code"`
+	Region   string `json:"region"`
+	Code     string `json:"code"` // deprecated legacy code, use Region
 	City     string `json:"city"`
 	Country  string `json:"country"`
 	Zone     string `json:"zone"`
@@ -260,7 +264,8 @@ type Live struct {
 	DiskGB         int64   `json:"disk_gb"`
 	Image          *string `json:"image"`
 	ImageName      *string `json:"image_name"`
-	Location       *string `json:"location"`
+	Region         *string `json:"region"`
+	Location       *string `json:"location"` // deprecated
 	Traffic        Traffic `json:"traffic"`
 }
 
@@ -270,8 +275,10 @@ type Server struct {
 	Hostname     *string `json:"hostname"`
 	Status       string  `json:"status"`
 	ProductID    int64   `json:"product_id"`
-	ServerType   *string `json:"server_type"`
-	Location     *string `json:"location"`
+	Plan         *string `json:"plan"`
+	Region       *string `json:"region"`
+	ServerType   *string `json:"server_type"` // deprecated, use Plan
+	Location     *string `json:"location"`    // deprecated, use Region
 	IPv4         *string `json:"ipv4"`
 	IPv6         *string `json:"ipv6"`
 	Provisioned  bool    `json:"provisioned"`
@@ -286,8 +293,10 @@ type Server struct {
 
 type CreateServerRequest struct {
 	ProductID  int64   `json:"product_id,omitempty"`
-	ServerType string  `json:"server_type,omitempty"`
-	Location   string  `json:"location,omitempty"`
+	Plan       string  `json:"plan,omitempty"`
+	Region     string  `json:"region,omitempty"`
+	ServerType string  `json:"server_type,omitempty"` // deprecated alias of Plan
+	Location   string  `json:"location,omitempty"`    // deprecated alias of Region
 	Cycle      string  `json:"cycle,omitempty"`
 	Image      string  `json:"image,omitempty"`
 	SSHKeys    []int64 `json:"ssh_keys,omitempty"`
@@ -383,13 +392,17 @@ func listAll[T any](ctx context.Context, c *Client, path string, q url.Values) (
 	return all, nil
 }
 
-func (c *Client) Products(ctx context.Context, location, serverType string) ([]Product, error) {
+// ProductFilter narrows GET /cloud/products. Location and ServerType are the deprecated aliases of Region and Plan.
+type ProductFilter struct {
+	Region, Plan, Location, ServerType string
+}
+
+func (c *Client) Products(ctx context.Context, f ProductFilter) ([]Product, error) {
 	q := url.Values{}
-	if location != "" {
-		q.Set("location", location)
-	}
-	if serverType != "" {
-		q.Set("server_type", serverType)
+	for k, v := range map[string]string{"region": f.Region, "plan": f.Plan, "location": f.Location, "server_type": f.ServerType} {
+		if v != "" {
+			q.Set(k, v)
+		}
 	}
 	return listAll[Product](ctx, c, "cloud/products", q)
 }

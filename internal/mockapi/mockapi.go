@@ -68,6 +68,8 @@ type typedState struct {
 	mailboxes map[string]map[string]any
 	aliases   map[int64]map[string]any
 	buckets   map[string]bool
+	web       map[string]map[string]any // bucket -> website settings (enabled, index_document, error_document, spa, url)
+	cors      map[string][]any          // bucket -> rules (API shape)
 	skeys     map[string]string
 	dns       []map[string]any
 	app       map[int64]map[string]any
@@ -110,7 +112,7 @@ func New() *API {
 		subkeys:        map[int64]*subkey{},
 		nextObj:        100,
 		Resellers:      map[int64]bool{1: true},
-		T: typedState{mailboxes: map[string]map[string]any{}, aliases: map[int64]map[string]any{}, buckets: map[string]bool{}, skeys: map[string]string{},
+		T: typedState{mailboxes: map[string]map[string]any{}, aliases: map[int64]map[string]any{}, buckets: map[string]bool{}, web: map[string]map[string]any{}, cors: map[string][]any{}, skeys: map[string]string{},
 			app: map[int64]map[string]any{}, nextAlias: 1},
 	}
 }
@@ -821,6 +823,71 @@ func (a *API) typed(w http.ResponseWriter, m string, owner int64, seg []string, 
 		b, _ := body["bucket"].(string)
 		t.buckets[b] = true
 		ok(w, 202, map[string]any{"status": "accepted"}, nil)
+	case len(seg) == 6 && seg[3] == "buckets" && seg[5] == "website": // GyroAPI 2.6.0
+		bk := seg[4]
+		if !t.buckets[bk] {
+			fail(w, 422, "tool_action_failed", "This bucket does not belong to your service.")
+			return
+		}
+		cur := t.web[bk]
+		if cur == nil {
+			cur = map[string]any{"enabled": false, "index_document": "index.html", "error_document": "", "spa": false, "url": "https://" + bk + "-abcd.web.example"}
+			t.web[bk] = cur
+		}
+		switch m {
+		case "PUT":
+			if cur["enabled"] != true && body["accept"] != true {
+				fail(w, 422, "tool_action_failed", "accept the rules")
+				return
+			}
+			idx, _ := body["index_document"].(string)
+			if idx == "" {
+				idx = "index.html"
+			}
+			if strings.Contains(idx, "/") {
+				fail(w, 422, "tool_action_failed", "invalid index document")
+				return
+			}
+			ed, _ := body["error_document"].(string)
+			spa, _ := body["spa"].(bool)
+			cur["enabled"], cur["index_document"], cur["error_document"], cur["spa"] = true, idx, ed, spa
+		case "DELETE":
+			if body["confirm"] != true {
+				fail(w, 422, "confirm_required", "confirm")
+				return
+			}
+			cur["enabled"] = false
+		}
+		ok(w, map[bool]int{true: 200, false: 202}[m == "GET"], map[string]any{"status": "accepted", "website": cur}, nil)
+	case len(seg) == 6 && seg[3] == "buckets" && seg[5] == "cors":
+		bk := seg[4]
+		if !t.buckets[bk] {
+			fail(w, 422, "tool_action_failed", "This bucket does not belong to your service.")
+			return
+		}
+		switch m {
+		case "PUT":
+			rl, _ := body["rules"].([]any)
+			for _, x := range rl {
+				r, _ := x.(map[string]any)
+				if o, _ := r["allowed_origins"].([]any); len(o) == 0 {
+					fail(w, 422, "tool_action_failed", "Rule: AllowedOrigins is required")
+					return
+				}
+			}
+			t.cors[bk] = rl
+		case "DELETE":
+			if body["confirm"] != true {
+				fail(w, 422, "confirm_required", "confirm")
+				return
+			}
+			delete(t.cors, bk)
+		}
+		rules := t.cors[bk]
+		if rules == nil {
+			rules = []any{}
+		}
+		ok(w, map[bool]int{true: 200, false: 202}[m == "GET"], map[string]any{"status": "accepted", "rules": rules}, nil)
 	case len(seg) == 5 && seg[3] == "buckets" && m == "DELETE":
 		delete(t.buckets, seg[4])
 		ok(w, 202, map[string]any{"status": "accepted"}, nil)

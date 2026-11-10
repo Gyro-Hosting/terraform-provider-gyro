@@ -1,3 +1,9 @@
+## 0.4.0 (2026-11-10)
+
+FEATURES:
+* **New resource** `gyro_load_balancer`: managed L4/L7 load balancer (small/medium/large, EU regions eu-de-1, eu-de-2, eu-fi-1). Paid order from the account balance (`confirm_order`), services (tcp/http/https, health checks, sticky sessions, HTTPS certificates, HTTP→HTTPS redirect, PROXY protocol), targets (your cloud servers, all your cloud servers, dedicated server IPs, private IPs), algorithm. `services` and `targets` are authoritative when set; drift made in the panel or CLI is shown and corrected. Import by id.
+* Requires Gyro Public API 2.4.0 (`/cloud/load-balancers`).
+
 ## 0.3.0 (2026-11-10)
 
 FEATURES:

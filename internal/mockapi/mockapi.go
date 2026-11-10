@@ -88,6 +88,7 @@ type API struct {
 	Tokens    map[string]int64  // token -> owner
 	Balance   map[int64]float64 // owner -> TRY
 	servers   map[int64]*server
+	fw        map[int64]map[string]any // server -> network firewall policy (GyroAPI 2.8.0)
 	keys      map[int64]*key
 	idem      map[string]idem
 	nextSrv   int64
@@ -239,6 +240,71 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	m := r.Method
 	switch {
+	case len(seg) >= 5 && seg[0] == "cloud" && seg[1] == "servers" && seg[3] == "firewall" && seg[4] == "policy": // GyroAPI 2.8.0
+		if a.fw == nil {
+			a.fw = map[int64]map[string]any{}
+		}
+		sv := a.servers[id(2)]
+		if sv == nil || sv.Owner != owner {
+			fail(w, 404, "server_not_found", "Server not found.")
+			return
+		}
+		cur := a.fw[sv.ID]
+		if cur == nil {
+			cur = map[string]any{"server_id": sv.ID, "engine": "network", "default_action": "allow", "ping": true, "status": "none", "permanent": false, "rules": []any{}, "operator_rules": []any{}}
+			a.fw[sv.ID] = cur
+		}
+		if len(seg) == 6 && seg[5] == "confirm" && m == "POST" {
+			if cur["status"] != "trial" {
+				fail(w, 422, "err_no_trial", "No trial to confirm.")
+				return
+			}
+			cur["status"], cur["permanent"] = "active", true
+		} else if m == "DELETE" {
+			cur["rules"], cur["default_action"], cur["status"], cur["permanent"] = []any{}, "allow", "none", false
+		} else if m == "PUT" {
+			rl, _ := body["rules"].([]any)
+			out := []any{}
+			for i, x := range rl {
+				r, _ := x.(map[string]any)
+				src, _ := r["source"].(string)
+				if src == "" || src == "any" {
+					src = "any"
+				} else if !strings.Contains(src, "/") && !strings.Contains(src, ":") {
+					src += "/32" // the API normalises single addresses
+				}
+				if src == "0.0.0.0/32" {
+					fail(w, 422, "err_source_zero", "0.0.0.0/32 matches no address.")
+					return
+				}
+				get := func(k, d string) string {
+					if v, ok := r[k].(string); ok && v != "" {
+						return v
+					}
+					return d
+				}
+				out = append(out, map[string]any{"priority": i + 1, "type": get("type", "rule"), "direction": get("direction", "in"), "action": get("action", "allow"),
+					"protocol": get("protocol", "tcp"), "source": src, "destination": get("destination", "any"), "port": get("port", "any"), "description": get("description", "")})
+			}
+			if body["default_action"] == "deny" && len(out) == 0 && body["confirm_warnings"] != true {
+				fail(w, 422, "confirm_warnings_required", "The change has warnings.")
+				return
+			}
+			da, _ := body["default_action"].(string)
+			if da == "" {
+				da = "allow"
+			}
+			cur["rules"], cur["default_action"] = out, da
+			if p, ok := body["ping"].(bool); ok {
+				cur["ping"] = p
+			}
+			if body["permanent"] == true {
+				cur["status"], cur["permanent"] = "active", true
+			} else {
+				cur["status"], cur["permanent"] = "trial", false
+			}
+		}
+		ok(w, 200, cur, nil)
 	case m == "GET" && path == "whoami":
 		ok(w, 200, map[string]any{"id": 1, "type": "client", "owner_id": owner, "permissions": []string{"Module:Addons/GyroAPI/*"}}, nil)
 	case m == "GET" && path == "cloud/products":

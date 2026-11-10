@@ -1,3 +1,14 @@
+## 0.7.0 (2026-11-11)
+
+FEATURES:
+* **New resource** `gyro_firewall`: the network firewall of a server (Network Firewall add-on), modelled on AWS network ACLs / ufw.
+  Ordered `rule` blocks (first match wins) with `action` (allow/deny), `protocol` (tcp, udp, tcp_udp, icmp, all), `source`
+  (any, IPv4/CIDR list, `country:XX` / `not-country:XX`), `destination` (any or one IP of the server), `port` (any, 22, 80,443, 1000-2000),
+  `direction` (in/out), `description`, plus `default_action` (allow/deny) for unmatched inbound traffic and `ping`.
+  `permanent` (default true) skips the 5 minute trial; `accept_warnings` applies changes the API flags (lock-out risk, shadowed rules, private sources).
+  The resource owns all customer rules of the server (rules applied by Gyro support are untouched); destroy removes them. Import by server id.
+* Requires Gyro Public API 2.8.0 (`/cloud/servers/{id}/firewall/policy`).
+
 ## 0.6.0 (2026-11-10)
 
 FEATURES:

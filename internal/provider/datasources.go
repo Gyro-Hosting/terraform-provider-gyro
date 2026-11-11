@@ -190,6 +190,7 @@ type imageModel struct {
 
 type imagesModel struct {
 	OSFlavor types.String `tfsdk:"os_flavor"`
+	Region   types.String `tfsdk:"region"`
 	Images   []imageModel `tfsdk:"images"`
 }
 
@@ -202,6 +203,7 @@ func (d *imagesDS) Schema(_ context.Context, _ datasource.SchemaRequest, resp *d
 		Description: "Operating system images that can be used for gyro_server.image.",
 		Attributes: map[string]schema.Attribute{
 			"os_flavor": schema.StringAttribute{Optional: true, Description: "Filter, e.g. debian or ubuntu."},
+			"region":    schema.StringAttribute{Optional: true, Description: "Only images offered in this region, e.g. tr-ist-1 (API 2.10.0+). Without it: the global cloud catalogue."},
 			"images": schema.ListNestedAttribute{Computed: true, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 				"slug": schema.StringAttribute{Computed: true}, "name": schema.StringAttribute{Computed: true}, "os_flavor": schema.StringAttribute{Computed: true},
 			}}},
@@ -219,7 +221,7 @@ func (d *imagesDS) Read(ctx context.Context, req datasource.ReadRequest, resp *d
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	list, err := d.pd.c.Images(ctx)
+	list, err := d.pd.c.ImagesIn(ctx, m.Region.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Listing images failed", err.Error())
 		return

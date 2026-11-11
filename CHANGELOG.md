@@ -1,3 +1,17 @@
+## 0.9.0 (2026-11-11)
+
+FEATURES:
+* Region `tr-ist-1` (Gyro Cloud Istanbul) with the existing `gyro_server` resource: `plan` + `region = "tr-ist-1"` (or `istanbul`), images from
+  `gyro_images` with `region = "tr-ist-1"`. Up to 10 `ssh_key_ids` at creation in tr-ist-1 (installed for root shortly after the first boot); `user_data` is not
+  accepted there.
+* Data source `gyro_images`: new optional `region` filter (API 2.10.0+; older APIs return the global list).
+* Requires Gyro Public API 2.10.0 for the region filter; tr-ist-1 servers themselves work with the same API calls.
+* **New resource** `gyro_container_service` (Gyro Containers / ECS, Istanbul): image, port, replicas, cpu_m, memory_mi, public, health_path, command, args,
+  env, secrets (write only), domains, run_as_user; import `<service_id>/<name>`.
+* Prepaid servers (tr-ist-1 is billed hourly from the account balance): the API reports `cycle = "hourly"`; the resource keeps the configured `cycle`
+  (no replacement) and `price` is the hourly EUR price. Destroying always deletes at once.
+* Requires Gyro Public API 2.11.0.
+
 ## 0.8.0 (2026-11-11)
 
 FEATURES:

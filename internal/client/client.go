@@ -419,6 +419,16 @@ func (c *Client) Images(ctx context.Context) ([]Image, error) {
 	return out, err
 }
 
+// ImagesIn lists the images offered in one region (API 2.10.0+; older APIs ignore the filter and return the global list).
+func (c *Client) ImagesIn(ctx context.Context, region string) ([]Image, error) {
+	if region == "" {
+		return c.Images(ctx)
+	}
+	var out []Image
+	_, err := c.Do(ctx, http.MethodGet, "cloud/images", url.Values{"region": {region}}, nil, "", &out)
+	return out, err
+}
+
 func (c *Client) SSHKeys(ctx context.Context) ([]SSHKey, error) {
 	return listAll[SSHKey](ctx, c, "cloud/ssh-keys", nil)
 }

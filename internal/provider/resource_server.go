@@ -77,7 +77,7 @@ func (r *serverResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Description:   "Plan name from gyro_products, e.g. standart-2-4. Use together with region. Changing it replaces the server.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIfConfigured(), stringplanmodifier.UseStateForUnknown()}},
 			"region": schema.StringAttribute{Optional: true, Computed: true,
-				Description:   "Region from gyro_locations, e.g. eu-de-1 or tr-ist-1. Use together with plan. Changing it replaces the server.",
+				Description:   "Region from gyro_locations, e.g. eu-de-1 or tr-ist-1 (Istanbul; images from gyro_images with region = \"tr-ist-1\", no user_data). Use together with plan. Changing it replaces the server.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIfConfigured(), stringplanmodifier.UseStateForUnknown()}},
 			"server_type": schema.StringAttribute{Optional: true, Computed: true,
 				Description:        "Deprecated: legacy product code, kept so existing configurations and state keep working. Use plan.",
@@ -88,14 +88,14 @@ func (r *serverResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				DeprecationMessage: "location is deprecated and will be removed in a future major version. Use region (see gyro_locations) instead; switching does not replace the server.",
 				PlanModifiers:      []planmodifier.String{stringplanmodifier.RequiresReplaceIfConfigured(), stringplanmodifier.UseStateForUnknown()}},
 			"cycle": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("monthly"),
-				Description:   "Billing cycle: monthly (default), quarterly, semiannually, annually.",
+				Description:   "Billing cycle: monthly (default), quarterly, semiannually, annually. Ignored for prepaid products (billed hourly from the account balance, e.g. region tr-ist-1).",
 				Validators:    []validator.String{stringvalidator.OneOf("monthly", "quarterly", "semiannually", "annually")},
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 			"image": schema.StringAttribute{Required: true, Description: "Image slug from gyro_images, e.g. debian-12. Changing it replaces the server.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 			"hostname": schema.StringAttribute{Optional: true, Computed: true, Description: "Host name. Changes are applied in place (must be a FQDN when renaming).",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-			"ssh_key_ids": schema.ListAttribute{ElementType: types.Int64Type, Optional: true, Description: "gyro_ssh_key ids to install at creation (max 1 in API v1).",
+			"ssh_key_ids": schema.ListAttribute{ElementType: types.Int64Type, Optional: true, Description: "gyro_ssh_key ids to install at creation. Global regions: max 1. tr-ist-1 (Istanbul): up to 10, installed for root shortly after the first boot (see the server's ssh_keys state in the API).",
 				PlanModifiers: []planmodifier.List{listplanmodifier.RequiresReplace()}},
 			"user_data": schema.StringAttribute{Optional: true, Sensitive: true, Description: "cloud-init user data (max 32 KiB).",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
@@ -162,8 +162,11 @@ func apply(m *serverModel, s *client.Server) {
 	}
 	keepKnown(&m.ServerType, s.ServerType)
 	keepKnown(&m.Location, s.Location)
-	if s.Cycle != "" {
+	if s.Cycle != "" && s.Cycle != "hourly" {
 		m.Cycle = types.StringValue(s.Cycle)
+	} else if s.Cycle == "hourly" && (m.Cycle.IsNull() || m.Cycle.IsUnknown()) {
+		// prepaid (hourly from the balance, e.g. tr-ist-1): no billing cycle; keep the configured value, default on import
+		m.Cycle = types.StringValue("monthly")
 	}
 	m.Hostname = sp(s.Hostname)
 	m.AutoRenew = types.BoolValue(s.AutoRenew)

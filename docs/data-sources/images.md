@@ -18,6 +18,7 @@ Operating system images that can be used for gyro_server.image.
 ### Optional
 
 - `os_flavor` (String) Filter, e.g. debian or ubuntu.
+- `region` (String) Only images offered in this region, e.g. tr-ist-1 (API 2.10.0+). Without it: the global cloud catalogue.
 
 ### Read-Only
 

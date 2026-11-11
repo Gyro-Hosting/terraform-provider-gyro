@@ -100,6 +100,23 @@ type API struct {
 	Calls     []string
 	// ProvisionPolls is how many GETs a new server stays "inprocess" (default 1).
 	ProvisionPolls int
+	// Ist enables the tr-ist-1 (Istanbul) catalogue: one product, its own image list, up to 10 SSH keys at creation (API 2.10.0).
+	Ist bool
+}
+
+var istProducts = []map[string]any{
+	{"id": 1107, "name": "Gyro Bulut Standart 2-4", "plan": "standart-2-4", "region": "tr-ist-1", "product_line": "cloud_server", "server_type": "ist-1107", "location": "ist1", "cores": 2, "memory_gb": 4, "disk_gb": 50, "cpu_type": "dedicated", "architecture": "x86", "traffic_tb": nil, "ipv4": true, "ipv6": true, "available": true,
+		"prices": []map[string]any{{"cycle": "monthly", "amount": 239.49, "setup": 0, "currency": "TRY"}}},
+}
+
+var istImages = []map[string]any{{"slug": "alma-8", "name": "AlmaLinux 8", "os_flavor": "alma"}, {"slug": "debian-12", "name": "Debian 12", "os_flavor": "debian"},
+	{"slug": "ubuntu-22.04", "name": "Ubuntu 22.04", "os_flavor": "ubuntu"}, {"slug": "ubuntu-24.04", "name": "Ubuntu 24.04", "os_flavor": "ubuntu"}}
+
+func (a *API) catalog() []map[string]any {
+	if !a.Ist {
+		return products
+	}
+	return append(append([]map[string]any{}, products...), istProducts...)
 }
 
 func New() *API {
@@ -132,7 +149,7 @@ var products = []map[string]any{
 }
 
 // regionCity mirrors the API: a region may also be given by its city name.
-var regionCity = map[string]string{"eu-de-1": "falkenstein", "eu-fi-1": "helsinki"}
+var regionCity = map[string]string{"eu-de-1": "falkenstein", "eu-fi-1": "helsinki", "tr-ist-1": "istanbul"}
 
 // matchesPlan: the API accepts plan or the legacy server_type, and either value in either field.
 func matchesPlan(p, body map[string]any) bool {
@@ -316,7 +333,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ok(w, 200, map[string]any{"id": 1, "type": "client", "owner_id": owner, "permissions": []string{"Module:Addons/GyroAPI/*"}}, nil)
 	case m == "GET" && path == "cloud/products":
 		var out []map[string]any
-		for _, p := range products {
+		for _, p := range a.catalog() {
 			q := r.URL.Query()
 			if l := q.Get("location"); l != "" && p["location"] != l && p["region"] != l {
 				continue
@@ -333,6 +350,10 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			out = append(out, p)
 		}
 		ok(w, 200, out, map[string]any{"total": len(out), "page": 1, "limit": 100, "next_page": 0})
+	case m == "GET" && path == "cloud/locations" && a.Ist:
+		ok(w, 200, []map[string]any{{"region": "eu-de-1", "code": "dc-a", "city": "Falkenstein", "country": "DE", "zone": "eu-central", "products": 2}, {"region": "eu-fi-1", "code": "dc-c", "city": "Helsinki", "country": "FI", "zone": "eu-central", "products": 1}, {"region": "tr-ist-1", "code": "ist1", "city": "Istanbul", "country": "TR", "zone": "tr-ist", "products": 1}}, nil)
+	case m == "GET" && path == "cloud/images" && a.Ist && r.URL.Query().Get("region") == "tr-ist-1":
+		ok(w, 200, istImages, nil)
 	case m == "GET" && path == "cloud/locations":
 		ok(w, 200, []map[string]any{{"region": "eu-de-1", "code": "dc-a", "city": "Falkenstein", "country": "DE", "zone": "eu-central", "products": 2}, {"region": "eu-fi-1", "code": "dc-c", "city": "Helsinki", "country": "FI", "zone": "eu-central", "products": 1}}, nil)
 	case m == "GET" && path == "cloud/images":
@@ -439,7 +460,7 @@ func (a *API) create(w http.ResponseWriter, r *http.Request, owner int64, body m
 		pid = int64(f)
 	}
 	var prod map[string]any
-	for _, p := range products {
+	for _, p := range a.catalog() {
 		if (pid > 0 && int64(p["id"].(int)) == pid) || (pid == 0 && matchesPlan(p, body) && matchesRegion(p, body)) {
 			prod = p
 		}
@@ -453,8 +474,17 @@ func (a *API) create(w http.ResponseWriter, r *http.Request, owner int64, body m
 		return
 	}
 	img, _ := body["image"].(string)
-	if img != "debian-12" && img != "ubuntu-24.04" {
+	ist := prod["region"] == "tr-ist-1"
+	if img != "debian-12" && img != "ubuntu-24.04" && !(ist && (img == "ubuntu-22.04" || img == "alma-8")) {
 		fail(w, 422, "invalid_image", "image is not offered on this product.")
+		return
+	}
+	if ud, _ := body["user_data"].(string); ist && ud != "" {
+		fail(w, 422, "invalid_user_data", "This product does not accept user_data.")
+		return
+	}
+	if ks, has := body["ssh_keys"].([]any); has && ((!ist && len(ks) > 1) || len(ks) > 10) {
+		fail(w, 422, "too_many_ssh_keys", "too many SSH keys at creation.")
 		return
 	}
 	if ks, has := body["ssh_keys"].([]any); has {

@@ -1,3 +1,12 @@
+## 0.10.0 (2026-11-11)
+
+FEATURES:
+* **New resource** `gyro_dns_acme_key`: ACME key of a Gyro DNS service for Let's Encrypt DNS-01 (wildcard certificates). The key can only add and
+  remove `_acme-challenge` TXT records, optionally only in `zones` and only from `ips`; `token` (sensitive) is known right after creation. Every
+  argument forces a new key. Import `<service_id>/<key_id>` (no token). Use it with acme.sh, Certbot, Caddy, Traefik or cert-manager
+  (https://github.com/Gyro-Hosting/gyro-acme).
+* Requires Gyro Public API 2.13.0.
+
 ## 0.9.0 (2026-11-11)
 
 FEATURES:

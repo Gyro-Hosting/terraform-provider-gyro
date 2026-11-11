@@ -29,6 +29,7 @@ type server struct {
 	AutoRenew bool
 	Cycle     string
 	Snapshots []map[string]any
+	Rdns      map[string]string // ip -> ptr (2.12.0)
 }
 
 type key struct {
@@ -597,6 +598,29 @@ func (a *API) serverRoute(w http.ResponseWriter, r *http.Request, s *server, seg
 			return
 		}
 		ok(w, 202, map[string]any{"action": seg[4], "status": "accepted", "server_id": s.ID, "message": "ok"}, nil)
+	case len(seg) == 4 && seg[3] == "rdns" && (m == "GET" || m == "PUT"):
+		ip := fmt.Sprintf("45.87.174.%d", 100+s.ID%100)
+		if s.Rdns == nil {
+			s.Rdns = map[string]string{}
+		}
+		if m == "PUT" {
+			if body["ip"] != ip {
+				fail(w, 422, "invalid_ip", "ip must be an address of this server.")
+				return
+			}
+			h, _ := body["hostname"].(string)
+			if h == "" {
+				delete(s.Rdns, ip)
+			} else {
+				s.Rdns[ip] = h
+			}
+		}
+		var host any
+		st := "none"
+		if h, has := s.Rdns[ip]; has {
+			host, st = h, "pending"
+		}
+		ok(w, 200, []any{map[string]any{"ip": ip, "hostname": host, "version": "ipv4", "status": st}}, nil)
 	case len(seg) == 4 && seg[3] == "snapshots" && m == "GET":
 		ok(w, 200, map[string]any{"items": s.Snapshots, "quota_gb": 20}, nil)
 	case len(seg) == 4 && seg[3] == "snapshots" && m == "POST":

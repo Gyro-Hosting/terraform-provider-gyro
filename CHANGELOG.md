@@ -1,3 +1,10 @@
+## 0.11.0 (2026-11-12)
+
+FEATURES:
+* **New resource** `gyro_server_rdns`: PTR of one server address (`server_id`, `ip`, `hostname`; computed `status`). In tr-ist-1 the record is a request
+  (`pending` until approved) and a new address without a record gets one created. Destroy resets the address. Import `<server_id>/<ip>`.
+* Requires Gyro Public API 2.13.0 for tr-ist-1 create/`status` (other regions work with older APIs).
+
 ## 0.10.0 (2026-11-11)
 
 FEATURES:

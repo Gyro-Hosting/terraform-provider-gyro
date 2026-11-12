@@ -1,3 +1,10 @@
+## 0.13.0 (2026-11-12)
+
+FEATURES:
+* **New resource** `gyro_server_template` (Gyro Public API 2.15.0): capture one of your tr-ist-1 servers as a custom template (`mode` snapshot or
+  shutdown), rename it in place, import by id. Billed 0.05 EUR per GB-month of the space it really uses (prepaid, hourly); destroy stops the charge.
+* `gyro_server`: `image = "custom:<id>"` (e.g. `gyro_server_template.golden.image`) orders a tr-ist-1 server installed from your template
+  (`POST /cloud/templates/{id}/servers`, same confirm / Idempotency-Key / balance rules). Mock API and acceptance test included.
 ## 0.12.2 (2026-11-12)
 
 ENHANCEMENTS:

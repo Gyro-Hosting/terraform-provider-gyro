@@ -91,7 +91,7 @@ func (r *serverResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Description:   "Billing cycle: monthly (default), quarterly, semiannually, annually. Ignored for prepaid products (billed hourly from the account balance, e.g. region tr-ist-1).",
 				Validators:    []validator.String{stringvalidator.OneOf("monthly", "quarterly", "semiannually", "annually")},
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
-			"image": schema.StringAttribute{Required: true, Description: "Image slug from gyro_images, e.g. debian-12. Changing it replaces the server.",
+			"image": schema.StringAttribute{Required: true, Description: "Image slug from gyro_images, e.g. debian-12, or custom:<id> (gyro_server_template.image, tr-ist-1). Changing it replaces the server.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 			"hostname": schema.StringAttribute{Optional: true, Computed: true, Description: "Host name. Changes are applied in place (must be a FQDN when renaming).",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -233,7 +233,13 @@ func (r *serverResource) Create(ctx context.Context, req resource.CreateRequest,
 		in.SSHKeys = ids
 	}
 	// One key per logical order: the client retries with it, the API replays instead of ordering twice.
-	res, err := r.pd.c.CreateServer(ctx, in, client.NewIdempotencyKey())
+	var res *client.CreateServerResult
+	var err error
+	if tid := client.TemplateImageID(in.Image); tid > 0 { // image = custom:<id> -> server from your own template (tr-ist-1, API 2.15.0)
+		res, err = r.pd.c.CreateServerFromTemplate(ctx, tid, in, client.NewIdempotencyKey())
+	} else {
+		res, err = r.pd.c.CreateServer(ctx, in, client.NewIdempotencyKey())
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Ordering the server failed", err.Error())
 		return

@@ -47,7 +47,7 @@ output "web_ipv4" {
 ### Required
 
 - `confirm_order` (Boolean) Must be true: creating a server spends account balance.
-- `image` (String) Image slug from gyro_images, e.g. debian-12. Changing it replaces the server.
+- `image` (String) Image slug from gyro_images, e.g. debian-12, or `custom:<id>` (`gyro_server_template.image`, tr-ist-1: the server is installed from your own template). Changing it replaces the server.
 
 ### Optional
 

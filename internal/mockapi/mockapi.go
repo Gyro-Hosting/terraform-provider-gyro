@@ -265,6 +265,9 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return n
 	}
 	m := r.Method
+	if seg[0] == "cloud" && a.templates(w, r, m, seg, owner, body, id) { // GyroAPI 2.15.0 custom templates (templates.go)
+		return
+	}
 	switch {
 	case seg[0] == "cloud" && (len(seg) >= 2 && seg[1] == "security-groups" || len(seg) >= 4 && seg[1] == "servers" && seg[3] == "security-groups"): // GyroAPI 2.9.0
 		a.securityGroups(w, m, seg, owner, body, id)

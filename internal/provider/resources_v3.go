@@ -336,7 +336,7 @@ func (r *bucketResource) find(ctx context.Context, m *bucketModel) (bool, error)
 		}
 	}
 	for _, b := range bl.Items {
-		if want[b.Name] && (b.State == "" || b.State == "active") {
+		if want[b.Name] && b.State != "deleting" && b.State != "purged" && b.State != "deleted" {
 			m.ID = types.StringValue(fmt.Sprintf("%d/%s", sid(m.ServiceID), b.Name))
 			m.FullName = types.StringValue(b.Name)
 			m.ObjectLock = types.BoolValue(b.ObjectLock)

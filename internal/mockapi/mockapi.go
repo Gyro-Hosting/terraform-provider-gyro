@@ -75,6 +75,10 @@ type typedState struct {
 	dns       []map[string]any
 	app       map[int64]map[string]any
 	nextAlias int64
+	// Protected Storage service 3001 (versioning + object lock): bucket -> object_lock, default retention, old version days
+	kBuckets map[string]bool
+	kLock    map[string]map[string]any
+	kNC      map[string]int64
 }
 
 // API is safe for concurrent use.
@@ -135,7 +139,7 @@ func New() *API {
 		subkeys:        map[int64]*subkey{},
 		nextObj:        100,
 		Resellers:      map[int64]bool{1: true},
-		T: typedState{mailboxes: map[string]map[string]any{}, aliases: map[int64]map[string]any{}, buckets: map[string]bool{}, web: map[string]map[string]any{}, cors: map[string][]any{}, skeys: map[string]string{},
+		T: typedState{mailboxes: map[string]map[string]any{}, aliases: map[int64]map[string]any{}, buckets: map[string]bool{}, kBuckets: map[string]bool{}, kLock: map[string]map[string]any{}, kNC: map[string]int64{}, web: map[string]map[string]any{}, cors: map[string][]any{}, skeys: map[string]string{},
 			app: map[int64]map[string]any{}, nextAlias: 1},
 	}
 }
@@ -869,6 +873,8 @@ func (a *API) typed(w http.ResponseWriter, m string, owner int64, seg []string, 
 	t := &a.T
 	key := strings.Join(seg, "/")
 	switch {
+	case seg[0] == "cloud" && seg[1] == "storage" && seg[2] == "3001":
+		a.protected(w, m, seg, body)
 	case seg[0] == "cloud" && seg[1] == "mail" && seg[2] != "2000", seg[0] == "cloud" && seg[1] == "storage" && seg[2] != "3000":
 		fail(w, 404, "service_not_found", "Service not found.")
 	case key == "cloud/mail/2000/mailboxes" && m == "GET":
@@ -1248,4 +1254,73 @@ func (a *API) securityGroups(w http.ResponseWriter, m string, seg []string, owne
 		return
 	}
 	ok(w, 200, view(g), nil)
+}
+
+// protected serves Protected Storage service 3001 (API 2.14.0): names get "-ab12", object lock + old version expiry.
+func (a *API) protected(w http.ResponseWriter, m string, seg []string, body map[string]any) {
+	t := &a.T
+	key := strings.Join(seg[3:], "/")
+	switch {
+	case key == "buckets" && m == "GET":
+		items := []map[string]any{}
+		for b, lk := range t.kBuckets {
+			items = append(items, map[string]any{"name": b, "state": "active", "object_lock": lk, "path_url": "https://s3-kilit.example/" + b, "vhost_url": "https://" + b + ".s3-kilit.example"})
+		}
+		ok(w, 200, map[string]any{"items": items, "kilit": true, "web_code": "ab12", "versioning": true}, nil)
+	case key == "buckets" && m == "POST":
+		b, _ := body["bucket"].(string)
+		lk, _ := body["object_lock"].(bool)
+		t.kBuckets[b+"-ab12"] = lk
+		t.kNC[b+"-ab12"] = 30
+		ok(w, 202, map[string]any{"status": "accepted"}, nil)
+	case len(seg) == 5 && seg[3] == "buckets" && m == "DELETE":
+		delete(t.kBuckets, seg[4])
+		ok(w, 202, map[string]any{"status": "accepted"}, nil)
+	case len(seg) == 6 && seg[3] == "buckets" && seg[5] == "object-lock":
+		bk := seg[4]
+		lk, exists := t.kBuckets[bk]
+		if !exists {
+			fail(w, 404, "bucket_not_found", "Bucket not found.")
+			return
+		}
+		if m == "PUT" {
+			if !lk {
+				fail(w, 422, "tool_action_failed", "Object lock is not enabled on this bucket.")
+				return
+			}
+			mode, _ := body["mode"].(string)
+			if mode == "OFF" {
+				delete(t.kLock, bk)
+			} else {
+				if mode == "COMPLIANCE" && (body["confirm"] != true || body["acknowledge"] != "COMPLIANCE") {
+					fail(w, 422, "compliance_confirm_required", "COMPLIANCE retention cannot be removed by anyone (Gyro included).")
+					return
+				}
+				t.kLock[bk] = map[string]any{"mode": mode, "days": body["days"], "years": nil}
+			}
+		}
+		var def any
+		if d, ok := t.kLock[bk]; ok {
+			def = d
+		}
+		ok(w, map[bool]int{true: 202, false: 200}[m == "PUT"], map[string]any{"bucket": bk, "object_lock": lk, "default_retention": def}, nil)
+	case len(seg) == 7 && seg[3] == "buckets" && seg[5] == "lifecycle" && seg[6] == "noncurrent":
+		bk := seg[4]
+		if _, exists := t.kBuckets[bk]; !exists {
+			fail(w, 404, "bucket_not_found", "Bucket not found.")
+			return
+		}
+		if m == "PUT" {
+			switch d := body["days"].(type) {
+			case float64:
+				t.kNC[bk] = int64(d)
+			case int64:
+				t.kNC[bk] = d
+			}
+		}
+		n := t.kNC[bk]
+		ok(w, map[bool]int{true: 202, false: 200}[m == "PUT"], map[string]any{"bucket": bk, "noncurrent_days": n, "enabled": n > 0, "default_days": 30}, nil)
+	default:
+		fail(w, 404, "endpoint_not_found", "No API endpoint matches.")
+	}
 }

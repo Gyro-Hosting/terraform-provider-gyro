@@ -159,3 +159,55 @@ resource "gyro_storage_bucket_cors" "site" {
 		},
 	})
 }
+
+// Protected Storage (API 2.14.0): locked bucket with the service code suffix, default retention, old version expiry.
+func TestAccMockProtectedStorage(t *testing.T) {
+	_, prov := mock(t)
+	cfg := func(mode string, days int, ack bool, nc int) string {
+		return prov + fmt.Sprintf(`
+resource "gyro_storage_bucket" "arsiv" {
+  service_id  = 3001
+  name        = "arsiv"
+  object_lock = true
+}
+resource "gyro_storage_bucket_object_lock" "arsiv" {
+  service_id             = 3001
+  bucket                 = gyro_storage_bucket.arsiv.full_name
+  mode                   = %q
+  days                   = %d
+  acknowledge_compliance = %v
+}
+resource "gyro_storage_bucket_noncurrent_expiration" "arsiv" {
+  service_id = 3001
+  bucket     = gyro_storage_bucket.arsiv.full_name
+  days       = %d
+}
+`, mode, days, ack, nc)
+	}
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: cfg("GOVERNANCE", 30, false, 7),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("gyro_storage_bucket.arsiv", "full_name", "arsiv-ab12"),
+					resource.TestCheckResourceAttr("gyro_storage_bucket.arsiv", "object_lock", "true"),
+					resource.TestCheckResourceAttr("gyro_storage_bucket.arsiv", "versioning", "true"),
+					resource.TestCheckResourceAttr("gyro_storage_bucket_object_lock.arsiv", "mode", "GOVERNANCE"),
+					resource.TestCheckResourceAttr("gyro_storage_bucket_noncurrent_expiration.arsiv", "days", "7"),
+				),
+			},
+			{Config: cfg("COMPLIANCE", 30, false, 7), ExpectError: regexp.MustCompile(`acknowledge_compliance`)},
+			{
+				Config: cfg("COMPLIANCE", 60, true, 0),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("gyro_storage_bucket_object_lock.arsiv", "mode", "COMPLIANCE"),
+					resource.TestCheckResourceAttr("gyro_storage_bucket_object_lock.arsiv", "days", "60"),
+					resource.TestCheckResourceAttr("gyro_storage_bucket_noncurrent_expiration.arsiv", "days", "0"),
+				),
+			},
+			{ResourceName: "gyro_storage_bucket_object_lock.arsiv", ImportState: true, ImportStateId: "3001/arsiv-ab12", ImportStateVerify: true,
+				ImportStateVerifyIgnore: []string{"disable_on_destroy"}},
+		},
+	})
+}

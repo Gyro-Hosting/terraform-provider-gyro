@@ -1,3 +1,9 @@
+## 0.12.1 (2026-11-12)
+
+BUG FIXES:
+* `gyro_storage_bucket`: a bucket is found in any live state (only `deleting` / `purged` buckets are ignored); 0.12.0 required the state `active`.
+* Acceptance tests for Protected Storage (mock API service 3001).
+
 ## 0.12.0 (2026-11-12)
 
 FEATURES:

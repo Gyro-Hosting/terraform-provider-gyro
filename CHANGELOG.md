@@ -1,3 +1,15 @@
+## 0.16.2 (2026-11-13)
+
+FEATURES:
+* **New data source** `gyro_container_sizes` (Gyro Public API 2.17.4 `GET /cloud/billing/container-sizes`): Gyro Containers Serverless
+  vCPU / memory pairs accepted by `gyro_container_service` (`cpu_m` / `memory_mi`) and the per-hour prices.
+* **New data source** `gyro_prepaid_estimate` (`POST /cloud/billing/estimate`): hourly / daily / monthly cost of prepaid plans and serverless
+  containers (`cpu_m`, `memory_mi`, `count`, `hours`; no monthly cap, `capped = false`) and how long the balance lasts. Nothing is ordered.
+
+ENHANCEMENTS:
+* `gyro_server_ip`: new computed `reverse_dns` (automatic default PTR, API 2.17.2), `minimum_hours` (each address is billed at least this many
+  hours, API 2.17.1), `hourly_eur` and `monthly_eur`.
+
 ## 0.16.1 (2026-11-13)
 
 ENHANCEMENTS:

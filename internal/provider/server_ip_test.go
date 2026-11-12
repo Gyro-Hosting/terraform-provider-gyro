@@ -38,14 +38,15 @@ func (x *ipMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	list := func(added []string) {
 		ex := []map[string]any{}
 		for _, a := range x.ips[srv] {
-			ex = append(ex, map[string]any{"ip": a, "prefix": 32, "added_at": "2026-11-12T12:00:00+03:00", "reverse_dns": nil})
+			ex = append(ex, map[string]any{"ip": a, "prefix": 32, "added_at": "2026-11-12T12:00:00+03:00", "reverse_dns": strings.ReplaceAll(a, ".", "-") + ".ip.gyrohosting.com"})
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost {
 			w.WriteHeader(201)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"server_id": srv, "primary_ip": "31.58.248.195", "extra_ips": ex, "count": len(ex),
-			"max": 5, "available": 5 - len(ex), "applied_on_server": true, "added": added}})
+			"max": 5, "available": 5 - len(ex), "applied_on_server": true, "added": added,
+			"pricing": map[string]any{"billing": "prepaid", "per_ip_monthly_eur": 2.0, "per_ip_hourly_eur": 0.002976, "minimum_hours": 6}}})
 	}
 	switch {
 	case r.Method == http.MethodGet && ip == "":
@@ -112,6 +113,9 @@ resource "gyro_server_ip" "a" {
 			{Config: cfg(2), Check: resource.ComposeAggregateTestCheckFunc(
 				resource.TestMatchResourceAttr("gyro_server_ip.a", "ip", regexp.MustCompile(`^31\.58\.248\.\d+$`)),
 				resource.TestCheckResourceAttr("gyro_server_ip.b", "applied_on_server", "true"),
+				resource.TestCheckResourceAttr("gyro_server_ip.a", "minimum_hours", "6"),
+				resource.TestCheckResourceAttr("gyro_server_ip.a", "monthly_eur", "2"),
+				resource.TestMatchResourceAttr("gyro_server_ip.a", "reverse_dns", regexp.MustCompile(`^31-58-248-\d+\.ip\.gyrohosting\.com$`)),
 				func(s *terraform.State) error {
 					a := s.RootModule().Resources["gyro_server_ip.a"].Primary.Attributes["ip"]
 					b := s.RootModule().Resources["gyro_server_ip.b"].Primary.Attributes["ip"]

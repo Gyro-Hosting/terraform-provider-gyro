@@ -7,7 +7,7 @@ description: |-
 
 # gyro_server_ip (Resource)
 
-One additional IPv4 address of a Gyro Cloud Istanbul (tr-ist-1) server. The address is taken from the pool and configured on the server automatically (/32 on the primary interface, kept across reboots and reinstalls). Billed hourly from the prepaid balance (default 2 EUR per address-month) until destroyed; up to 5 per server by default. Destroy releases the address (getting the same address back is not guaranteed). Reverse DNS: `gyro_server_rdns`.
+One additional IPv4 address of a Gyro Cloud Istanbul (tr-ist-1) server. The address is taken from the pool and configured on the server automatically (/32 on the primary interface, kept across reboots and reinstalls). Billed hourly from the prepaid balance (default 2 EUR per address-month) until destroyed, at least `minimum_hours` (default 6) per address; up to 5 per server by default. Destroy releases the address (getting the same address back is not guaranteed). Reverse DNS: `gyro_server_rdns`.
 
 ## Example Usage
 
@@ -32,8 +32,12 @@ output "extra_ips" {
 
 - `added_at` (String)
 - `applied_on_server` (Boolean) false while the server's guest agent has not confirmed the address yet.
+- `hourly_eur` (Number) Current price per address-hour in EUR (VAT excluded).
 - `id` (String) <server_id>/<ip>
 - `ip` (String) The assigned IPv4 address.
+- `minimum_hours` (Number) Every added address is billed at least this many hours (default 6), even if destroyed earlier. API 2.17.1+.
+- `monthly_eur` (Number) Current price per address-month in EUR (VAT excluded).
+- `reverse_dns` (String) Current PTR of the address (automatic default `<a-b-c-d>.ip.gyrohosting.com` unless set with `gyro_server_rdns`). API 2.17.2+.
 
 ## Import
 

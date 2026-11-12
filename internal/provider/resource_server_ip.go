@@ -25,11 +25,15 @@ type serverIPResource struct{ pd *providerData }
 func newServerIPResource() resource.Resource { return &serverIPResource{} }
 
 type serverIPModel struct {
-	ID       types.String `tfsdk:"id"`
-	ServerID types.Int64  `tfsdk:"server_id"`
-	IP       types.String `tfsdk:"ip"`
-	AddedAt  types.String `tfsdk:"added_at"`
-	Applied  types.Bool   `tfsdk:"applied_on_server"`
+	ID       types.String  `tfsdk:"id"`
+	ServerID types.Int64   `tfsdk:"server_id"`
+	IP       types.String  `tfsdk:"ip"`
+	AddedAt  types.String  `tfsdk:"added_at"`
+	Applied  types.Bool    `tfsdk:"applied_on_server"`
+	RDNS     types.String  `tfsdk:"reverse_dns"`
+	MinHours types.Int64   `tfsdk:"minimum_hours"`
+	HourEUR  types.Float64 `tfsdk:"hourly_eur"`
+	MonthEUR types.Float64 `tfsdk:"monthly_eur"`
 }
 
 type serverIPList struct {
@@ -37,7 +41,13 @@ type serverIPList struct {
 	ExtraIPs  []struct {
 		IP      string  `json:"ip"`
 		AddedAt *string `json:"added_at"`
+		RDNS    *string `json:"reverse_dns"`
 	} `json:"extra_ips"`
+	Pricing struct {
+		MonthlyEUR float64 `json:"per_ip_monthly_eur"`
+		HourlyEUR  float64 `json:"per_ip_hourly_eur"`
+		MinHours   int64   `json:"minimum_hours"`
+	} `json:"pricing"`
 	Applied bool     `json:"applied_on_server"`
 	Added   []string `json:"added"`
 }
@@ -50,7 +60,7 @@ func (r *serverIPResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 	resp.Schema = schema.Schema{
 		Description: "One additional IPv4 address of a Gyro Cloud Istanbul (tr-ist-1) server. The address is taken from the pool and configured " +
 			"on the server automatically (/32 on the primary interface). Billed hourly from the prepaid balance (default 2 EUR per address-month) " +
-			"until destroyed; up to 5 per server by default. Destroy releases the address (getting the same address back is not guaranteed). " +
+			"until destroyed, at least minimum_hours (default 6) per address; up to 5 per server by default. Destroy releases the address (getting the same address back is not guaranteed). " +
 			"Reverse DNS: gyro_server_rdns.",
 		Attributes: map[string]schema.Attribute{
 			"id":                schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "<server_id>/<ip>"},
@@ -58,6 +68,10 @@ func (r *serverIPResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 			"ip":                schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "The assigned IPv4 address."},
 			"added_at":          schema.StringAttribute{Computed: true, PlanModifiers: keep},
 			"applied_on_server": schema.BoolAttribute{Computed: true, Description: "false while the server's guest agent has not confirmed the address yet."},
+			"reverse_dns":       schema.StringAttribute{Computed: true, Description: "Current PTR of the address (automatic default <a-b-c-d>.ip.gyrohosting.com unless set with gyro_server_rdns). API 2.17.2+."},
+			"minimum_hours":     schema.Int64Attribute{Computed: true, Description: "Every added address is billed at least this many hours (default 6), even if destroyed earlier. API 2.17.1+."},
+			"hourly_eur":        schema.Float64Attribute{Computed: true, Description: "Current price per address-hour in EUR (VAT excluded)."},
+			"monthly_eur":       schema.Float64Attribute{Computed: true, Description: "Current price per address-month in EUR (VAT excluded)."},
 		},
 	}
 }
@@ -80,6 +94,13 @@ func (r *serverIPResource) fill(m *serverIPModel, l *serverIPList) bool {
 				m.AddedAt = types.StringValue("")
 			}
 			m.Applied = types.BoolValue(l.Applied)
+			m.RDNS = types.StringValue("")
+			if e.RDNS != nil {
+				m.RDNS = types.StringValue(*e.RDNS)
+			}
+			m.MinHours = types.Int64Value(l.Pricing.MinHours)
+			m.HourEUR = types.Float64Value(l.Pricing.HourlyEUR)
+			m.MonthEUR = types.Float64Value(l.Pricing.MonthlyEUR)
 			return true
 		}
 	}
@@ -106,6 +127,10 @@ func (r *serverIPResource) Create(ctx context.Context, req resource.CreateReques
 		m.ID = types.StringValue(fmt.Sprintf("%d/%s", sid(m.ServerID), out.Added[0]))
 		m.AddedAt = types.StringValue("")
 		m.Applied = types.BoolValue(false)
+		m.RDNS = types.StringValue("")
+		m.MinHours = types.Int64Value(out.Pricing.MinHours)
+		m.HourEUR = types.Float64Value(out.Pricing.HourlyEUR)
+		m.MonthEUR = types.Float64Value(out.Pricing.MonthlyEUR)
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }

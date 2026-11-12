@@ -484,8 +484,9 @@ func (a *API) create(w http.ResponseWriter, r *http.Request, owner int64, body m
 		fail(w, 422, "invalid_image", "image is not offered on this product.")
 		return
 	}
-	if ud, _ := body["user_data"].(string); ist && ud != "" {
-		fail(w, 422, "invalid_user_data", "This product does not accept user_data.")
+	// API 2.14.0: tr-ist-1 (Gyro Compute) accepts user_data like the global regions
+	if ud, _ := body["user_data"].(string); ud != "" && !strings.HasPrefix(ud, "#cloud-config") && !strings.HasPrefix(ud, "#!") {
+		fail(w, 422, "invalid_user_data", "user_data must start with #cloud-config or #!.")
 		return
 	}
 	if ks, has := body["ssh_keys"].([]any); has && ((!ist && len(ks) > 1) || len(ks) > 10) {

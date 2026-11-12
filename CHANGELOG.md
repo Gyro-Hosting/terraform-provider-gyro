@@ -1,3 +1,9 @@
+## 0.12.2 (2026-11-12)
+
+ENHANCEMENTS:
+* `gyro_server` in region `tr-ist-1` (Gyro Cloud Istanbul, Gyro Public API 2.14.0): `user_data` is accepted (cloud-init: `#cloud-config` or a `#!` script)
+  and all `ssh_key_ids` (up to 10) are installed for root at creation through cloud-init (about 25 s from order to SSH). Description and docs updated,
+  mock API follows the 2.14.0 behaviour. No schema change.
 ## 0.12.1 (2026-11-12)
 
 BUG FIXES:

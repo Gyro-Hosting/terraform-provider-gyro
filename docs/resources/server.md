@@ -59,10 +59,10 @@ output "web_ipv4" {
 - `plan` (String) Plan name from gyro_products, e.g. standart-2-4. Use together with region. Changing it replaces the server.
 - `power_state` (String) Desired power state: running or stopped.
 - `product_id` (Number) Product id from gyro_products. Alternative to plan + region.
-- `region` (String) Region from gyro_locations, e.g. eu-de-1 or tr-ist-1 (Istanbul; images from gyro_images with region = "tr-ist-1", no user_data). Use together with plan. Changing it replaces the server.
+- `region` (String) Region from gyro_locations, e.g. eu-de-1 or tr-ist-1 (Istanbul; images from gyro_images with region = "tr-ist-1"). Use together with plan. Changing it replaces the server.
 - `server_type` (String, Deprecated) Deprecated: legacy product code, kept so existing configurations and state keep working. Use plan.
-- `ssh_key_ids` (List of Number) gyro_ssh_key ids to install at creation. Global regions: max 1. tr-ist-1 (Istanbul): up to 10, installed for root shortly after the first boot (see the server's ssh_keys state in the API).
-- `user_data` (String, Sensitive) cloud-init user data (max 32 KiB).
+- `ssh_key_ids` (List of Number) gyro_ssh_key ids to install at creation. Global regions: max 1. tr-ist-1 (Istanbul): up to 10, installed for root at creation through cloud-init (API 2.14.0+).
+- `user_data` (String, Sensitive) cloud-init user data (max 32 KiB): #cloud-config or a #! script. Every region, tr-ist-1 included since API 2.14.0.
 
 ### Read-Only
 

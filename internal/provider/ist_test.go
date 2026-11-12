@@ -42,6 +42,7 @@ resource "gyro_server" "ist" {
   image         = "ubuntu-22.04"
   hostname      = "ist-1.example.com"
   ssh_key_ids   = [tonumber(gyro_ssh_key.a.id), tonumber(gyro_ssh_key.b.id)]
+  user_data     = "#cloud-config\npackages: [nginx]\n"
   power_state   = %q
   confirm_order = true
 }

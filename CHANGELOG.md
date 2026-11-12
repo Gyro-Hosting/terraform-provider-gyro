@@ -1,3 +1,16 @@
+## 0.12.0 (2026-11-12)
+
+FEATURES:
+* Gyro Protected Storage (versioning + object lock / WORM), Gyro Public API 2.14.0:
+  * `gyro_storage_bucket`: new `object_lock` (Protected Storage only, forces a new bucket when set; cannot be turned off), computed `full_name`
+    (real bucket name: `<name>-<service code>` on Protected Storage) and `versioning`. Buckets on Protected Storage are now found after create.
+  * **New resource** `gyro_storage_bucket_object_lock`: default retention of a locked bucket (`mode` GOVERNANCE or COMPLIANCE, `days` 1-3650).
+    COMPLIANCE needs `acknowledge_compliance = true`. Destroy leaves the rule in place and only forgets the resource (warning) unless
+    `disable_on_destroy = true`; object locks already applied can never be removed. Import `<service_id>/<bucket>`.
+  * **New resource** `gyro_storage_bucket_noncurrent_expiration`: delete old versions after `days` (0 = keep). Destroy restores the default (30 days).
+    Import `<service_id>/<bucket>`.
+* Existing `gyro_storage_bucket` states keep working without changes (no replacement planned).
+
 ## 0.11.1 (2026-11-12)
 
 DOCUMENTATION:

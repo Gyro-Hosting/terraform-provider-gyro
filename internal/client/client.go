@@ -706,12 +706,22 @@ type MailAlias struct {
 }
 
 type Bucket struct {
-	Name     string `json:"name"`
-	Bytes    int64  `json:"bytes"`
-	Objects  int64  `json:"objects"`
-	State    string `json:"state"`
-	PathURL  string `json:"path_url"`
-	VhostURL string `json:"vhost_url"`
+	Name       string `json:"name"`
+	Bytes      int64  `json:"bytes"`
+	Objects    int64  `json:"objects"`
+	State      string `json:"state"`
+	PathURL    string `json:"path_url"`
+	VhostURL   string `json:"vhost_url"`
+	ObjectLock bool   `json:"object_lock"`
+}
+
+// BucketList is GET cloud/storage/{id}/buckets with the Protected Storage fields (API 2.14.0):
+// Protected is true on a Protected Storage service (every bucket versioned, names get "-<Code>").
+type BucketList struct {
+	Items     []Bucket `json:"items"`
+	Protected bool     `json:"kilit"`
+	Code      string   `json:"web_code"`
+	Versioned bool     `json:"versioning"`
 }
 
 type StorageKey struct {
@@ -769,6 +779,12 @@ func (c *Client) Buckets(ctx context.Context, sid int64) ([]Bucket, error) {
 	}
 	_, err := c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/storage/%d/buckets", sid), nil, nil, "", &r)
 	return r.Items, err
+}
+
+func (c *Client) BucketList(ctx context.Context, sid int64) (*BucketList, error) {
+	var r BucketList
+	_, err := c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/storage/%d/buckets", sid), nil, nil, "", &r)
+	return &r, err
 }
 
 func (c *Client) StorageKeys(ctx context.Context, sid int64) ([]StorageKey, error) {

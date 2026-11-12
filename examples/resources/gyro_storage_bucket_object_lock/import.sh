@@ -1,0 +1,1 @@
+terraform import gyro_storage_bucket_object_lock.archive 789/archive-ab12

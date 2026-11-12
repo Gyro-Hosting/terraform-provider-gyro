@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -278,11 +279,14 @@ type bucketResource struct{ pd *providerData }
 func newBucketResource() resource.Resource { return &bucketResource{} }
 
 type bucketModel struct {
-	ID        types.String `tfsdk:"id"`
-	ServiceID types.Int64  `tfsdk:"service_id"`
-	Name      types.String `tfsdk:"name"`
-	PathURL   types.String `tfsdk:"path_url"`
-	VhostURL  types.String `tfsdk:"vhost_url"`
+	ID         types.String `tfsdk:"id"`
+	ServiceID  types.Int64  `tfsdk:"service_id"`
+	Name       types.String `tfsdk:"name"`
+	ObjectLock types.Bool   `tfsdk:"object_lock"`
+	FullName   types.String `tfsdk:"full_name"`
+	Versioning types.Bool   `tfsdk:"versioning"`
+	PathURL    types.String `tfsdk:"path_url"`
+	VhostURL   types.String `tfsdk:"vhost_url"`
 }
 
 func (r *bucketResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -291,13 +295,23 @@ func (r *bucketResource) Metadata(_ context.Context, req resource.MetadataReques
 
 func (r *bucketResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "An S3 bucket on a Gyro object storage service. Destroy deletes the bucket (it must be empty).",
+		Description: "An S3 bucket on a Gyro object storage service (Object Storage or Protected Storage). Destroy deletes the bucket (it must be empty; " +
+			"on Protected Storage old versions count as content).",
 		Attributes: map[string]schema.Attribute{
 			"id":         schema.StringAttribute{Computed: true, PlanModifiers: keep},
 			"service_id": schema.Int64Attribute{Required: true, PlanModifiers: replaceI},
-			"name":       schema.StringAttribute{Required: true, PlanModifiers: replaceS},
-			"path_url":   schema.StringAttribute{Computed: true, PlanModifiers: keep},
-			"vhost_url":  schema.StringAttribute{Computed: true, PlanModifiers: keep},
+			"name": schema.StringAttribute{Required: true, PlanModifiers: replaceS,
+				Description: "Bucket name. On Protected Storage the service code is appended (see full_name)."},
+			"object_lock": schema.BoolAttribute{Optional: true, Computed: true,
+				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown(), boolplanmodifier.RequiresReplaceIfConfigured()},
+				Description: "Protected Storage only: create the bucket with object lock (WORM). Needs a free locked-bucket right (Object Lock add-on). " +
+					"Can only be chosen at creation and never turned off; changing it replaces the bucket. A standard Object Storage service refuses true (feature_not_available)."},
+			"full_name": schema.StringAttribute{Computed: true, PlanModifiers: keep,
+				Description: "Real bucket name used by S3 clients and the other storage resources: name on Object Storage, <name>-<service code> on Protected Storage."},
+			"versioning": schema.BoolAttribute{Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+				Description: "True on Protected Storage (every bucket keeps old versions)."},
+			"path_url":  schema.StringAttribute{Computed: true, PlanModifiers: keep},
+			"vhost_url": schema.StringAttribute{Computed: true, PlanModifiers: keep},
 		},
 	}
 }
@@ -306,14 +320,27 @@ func (r *bucketResource) Configure(_ context.Context, req resource.ConfigureRequ
 	r.pd = pdOf(req, resp)
 }
 
+// find matches the bucket by full_name (state), name, or name-<service code> (Protected Storage).
 func (r *bucketResource) find(ctx context.Context, m *bucketModel) (bool, error) {
-	list, err := r.pd.c.Buckets(ctx, sid(m.ServiceID))
+	bl, err := r.pd.c.BucketList(ctx, sid(m.ServiceID))
 	if err != nil {
 		return false, err
 	}
-	for _, b := range list {
-		if b.Name == m.Name.ValueString() {
+	want := map[string]bool{}
+	if !m.FullName.IsNull() && !m.FullName.IsUnknown() && m.FullName.ValueString() != "" {
+		want[m.FullName.ValueString()] = true
+	} else {
+		want[m.Name.ValueString()] = true
+		if bl.Protected && bl.Code != "" {
+			want[m.Name.ValueString()+"-"+bl.Code] = true
+		}
+	}
+	for _, b := range bl.Items {
+		if want[b.Name] && (b.State == "" || b.State == "active") {
 			m.ID = types.StringValue(fmt.Sprintf("%d/%s", sid(m.ServiceID), b.Name))
+			m.FullName = types.StringValue(b.Name)
+			m.ObjectLock = types.BoolValue(b.ObjectLock)
+			m.Versioning = types.BoolValue(bl.Protected || bl.Versioned)
 			m.PathURL = types.StringValue(b.PathURL)
 			m.VhostURL = types.StringValue(b.VhostURL)
 			return true, nil
@@ -325,10 +352,15 @@ func (r *bucketResource) find(ctx context.Context, m *bucketModel) (bool, error)
 func (r *bucketResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var m bucketModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &m)...)
-	if _, err := r.pd.c.TypedWrite(ctx, http.MethodPost, fmt.Sprintf("cloud/storage/%d/buckets", sid(m.ServiceID)), map[string]any{"bucket": m.Name.ValueString(), "confirm": true}); err != nil {
+	body := map[string]any{"bucket": m.Name.ValueString(), "confirm": true}
+	if !m.ObjectLock.IsNull() && !m.ObjectLock.IsUnknown() && m.ObjectLock.ValueBool() {
+		body["object_lock"] = true
+	}
+	if _, err := r.pd.c.TypedWrite(ctx, http.MethodPost, fmt.Sprintf("cloud/storage/%d/buckets", sid(m.ServiceID)), body); err != nil {
 		resp.Diagnostics.AddError("Creating bucket failed", err.Error())
 		return
 	}
+	m.FullName = types.StringNull()
 	if ok, err := r.find(ctx, &m); err != nil || !ok {
 		resp.Diagnostics.AddError("Bucket not found after create", fmt.Sprint(err))
 		return
@@ -358,7 +390,11 @@ func (r *bucketResource) Update(ctx context.Context, req resource.UpdateRequest,
 func (r *bucketResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var m bucketModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &m)...)
-	_, err := r.pd.c.TypedWrite(ctx, http.MethodDelete, fmt.Sprintf("cloud/storage/%d/buckets/%s", sid(m.ServiceID), url.PathEscape(m.Name.ValueString())), map[string]any{"confirm": true})
+	name := m.Name.ValueString()
+	if !m.FullName.IsNull() && m.FullName.ValueString() != "" {
+		name = m.FullName.ValueString()
+	}
+	_, err := r.pd.c.TypedWrite(ctx, http.MethodDelete, fmt.Sprintf("cloud/storage/%d/buckets/%s", sid(m.ServiceID), url.PathEscape(name)), map[string]any{"confirm": true})
 	if err != nil && !client.IsNotFound(err) {
 		resp.Diagnostics.AddError("Deleting bucket failed", err.Error())
 	}

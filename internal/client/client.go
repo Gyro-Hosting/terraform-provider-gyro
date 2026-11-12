@@ -429,6 +429,27 @@ func (c *Client) ImagesIn(ctx context.Context, region string) ([]Image, error) {
 	return out, err
 }
 
+// App is a one-click app from GET /cloud/apps (Gyro Public API 2.14.1 adds the size, popularity and description fields).
+type App struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Category    string   `json:"category"`
+	OS          []string `json:"os"`
+	MinRAMGB    float64  `json:"min_ram_gb"`
+	MinDiskGB   int64    `json:"min_disk_gb"`
+	MinCPU      int64    `json:"min_cpu"`
+	NeedsDomain bool     `json:"needs_domain"`
+	PopularTR   bool     `json:"popular_tr"`
+	Version     string   `json:"version"`
+	License     string   `json:"license"`
+}
+
+func (c *Client) Apps(ctx context.Context) ([]App, error) {
+	var out []App
+	_, err := c.Do(ctx, http.MethodGet, "cloud/apps", nil, nil, "", &out)
+	return out, err
+}
+
 func (c *Client) SSHKeys(ctx context.Context) ([]SSHKey, error) {
 	return listAll[SSHKey](ctx, c, "cloud/ssh-keys", nil)
 }

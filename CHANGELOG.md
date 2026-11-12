@@ -1,3 +1,12 @@
+## 0.15.0 (2026-11-12)
+
+FEATURES:
+* **New data source** `gyro_apps`: one-click apps from `GET /cloud/apps` (Gyro Public API 2.16.1) with `min_ram_gb`, `min_disk_gb`, `min_cpu`,
+  `needs_domain`, `popular_tr` ("Popular in Türkiye"), `version`, `license` and supported `os` images. Optional filters `category`,
+  `popular_tr` and `os`. Use an `id` from it in `gyro_app_install.app`. The catalogue now has 74 apps (aaPanel, CyberPanel, Easypanel,
+  Mailcow, GitLab CE, Zabbix, Joomla, Drupal, PrestaShop, Moodle, Invoice Ninja, Akaunting, ONLYOFFICE Docs, Immich, RustDesk, Appwrite,
+  NocoDB and Plane were added).
+
 ## 0.14.0 (2026-11-12)
 
 FEATURES:

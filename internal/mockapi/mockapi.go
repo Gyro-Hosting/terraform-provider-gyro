@@ -93,7 +93,7 @@ type API struct {
 	Tokens    map[string]int64  // token -> owner
 	Balance   map[int64]float64 // owner -> TRY
 	servers   map[int64]*server
-	fw        map[int64]map[string]any // server -> network firewall policy (GyroAPI 2.8.0)
+	fw        map[int64]map[string]any  // server -> network firewall policy (GyroAPI 2.8.0)
 	sgs       map[string]map[string]any // security groups (GyroAPI 2.9.0)
 	sgOwner   map[string]int64
 	sgBind    map[int64][]string // server -> attached group ids
@@ -366,6 +366,12 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ok(w, 200, []map[string]any{{"region": "eu-de-1", "code": "dc-a", "city": "Falkenstein", "country": "DE", "zone": "eu-central", "products": 2}, {"region": "eu-fi-1", "code": "dc-c", "city": "Helsinki", "country": "FI", "zone": "eu-central", "products": 1}}, nil)
 	case m == "GET" && path == "cloud/images":
 		ok(w, 200, []map[string]any{{"slug": "debian-12", "name": "Debian 12", "os_flavor": "debian"}, {"slug": "ubuntu-24.04", "name": "Ubuntu 24.04", "os_flavor": "ubuntu"}}, nil)
+	case m == "GET" && path == "cloud/apps":
+		ok(w, 200, []map[string]any{
+			{"id": "wordpress", "name": "WordPress", "category": "web", "os": []string{"ubuntu-24.04", "debian-12"}, "min_ram_gb": 1, "min_disk_gb": 20, "min_cpu": 1, "needs_domain": false, "popular_tr": true, "version": "7", "license": "GPL-2.0-or-later"},
+			{"id": "docker", "name": "Docker + Compose", "category": "altyapi", "os": []string{"ubuntu-24.04", "ubuntu-22.04", "debian-12"}, "min_ram_gb": 0.5, "min_disk_gb": 10, "min_cpu": 1, "needs_domain": false, "popular_tr": false, "version": "ce-stable", "license": "Apache-2.0"},
+			{"id": "moodle", "name": "Moodle", "category": "egitim", "os": []string{"ubuntu-24.04"}, "min_ram_gb": 2, "min_disk_gb": 30, "min_cpu": 2, "needs_domain": false, "popular_tr": true, "version": "5", "license": "GPL-3.0"},
+		}, nil)
 	case m == "GET" && path == "balance":
 		ok(w, 200, map[string]any{"balance": map[string]any{"amount": a.Balance[owner], "currency": "TRY"}, "low_balance": false}, nil)
 	case m == "GET" && path == "cloud/ssh-keys":

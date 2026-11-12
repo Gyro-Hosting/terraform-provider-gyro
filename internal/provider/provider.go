@@ -103,5 +103,5 @@ func (p *gyroProvider) Resources(_ context.Context) []func() resource.Resource {
 }
 
 func (p *gyroProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{newProductsDataSource, newLocationsDataSource, newImagesDataSource, newServicesDataSource}
+	return []func() datasource.DataSource{newProductsDataSource, newLocationsDataSource, newImagesDataSource, newServicesDataSource, newAppsDataSource}
 }

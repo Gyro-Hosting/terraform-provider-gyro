@@ -236,6 +236,99 @@ func (d *imagesDS) Read(ctx context.Context, req datasource.ReadRequest, resp *d
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
 
+/* ------------------------------------------------------------------ gyro_apps */
+
+type appsDS struct{ pd *providerData }
+
+func newAppsDataSource() datasource.DataSource { return &appsDS{} }
+
+type appItemModel struct {
+	ID          types.String  `tfsdk:"id"`
+	Name        types.String  `tfsdk:"name"`
+	Category    types.String  `tfsdk:"category"`
+	OS          []string      `tfsdk:"os"`
+	MinRAMGB    types.Float64 `tfsdk:"min_ram_gb"`
+	MinDiskGB   types.Int64   `tfsdk:"min_disk_gb"`
+	MinCPU      types.Int64   `tfsdk:"min_cpu"`
+	NeedsDomain types.Bool    `tfsdk:"needs_domain"`
+	PopularTR   types.Bool    `tfsdk:"popular_tr"`
+	Version     types.String  `tfsdk:"version"`
+	License     types.String  `tfsdk:"license"`
+}
+
+type appsModel struct {
+	Category  types.String `tfsdk:"category"`
+	PopularTR types.Bool   `tfsdk:"popular_tr"`
+	OS        types.String `tfsdk:"os"`
+	Apps      []appItemModel   `tfsdk:"apps"`
+}
+
+func (d *appsDS) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_apps"
+}
+
+func (d *appsDS) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Description: "One-click apps that can be used for gyro_app_install.app (and the app option of a server order).",
+		Attributes: map[string]schema.Attribute{
+			"category":   schema.StringAttribute{Optional: true, Description: "Filter by category id, e.g. web, panel, yapayzeka."},
+			"popular_tr": schema.BoolAttribute{Optional: true, Description: "true: only apps listed under \"Popular in Türkiye\"."},
+			"os":         schema.StringAttribute{Optional: true, Description: "Only apps that support this image slug, e.g. ubuntu-24.04."},
+			"apps": schema.ListNestedAttribute{Computed: true, NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+				"id": schema.StringAttribute{Computed: true}, "name": schema.StringAttribute{Computed: true}, "category": schema.StringAttribute{Computed: true},
+				"os":          schema.ListAttribute{Computed: true, ElementType: types.StringType},
+				"min_ram_gb":  schema.Float64Attribute{Computed: true, Description: "Minimum RAM in GB; choose a plan with at least this much."},
+				"min_disk_gb": schema.Int64Attribute{Computed: true}, "min_cpu": schema.Int64Attribute{Computed: true},
+				"needs_domain": schema.BoolAttribute{Computed: true}, "popular_tr": schema.BoolAttribute{Computed: true},
+				"version": schema.StringAttribute{Computed: true}, "license": schema.StringAttribute{Computed: true},
+			}}},
+		},
+	}
+}
+
+func (d *appsDS) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+	d.pd = configureDS(req, resp)
+}
+
+func (d *appsDS) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	var m appsModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &m)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	list, err := d.pd.c.Apps(ctx)
+	if err != nil {
+		resp.Diagnostics.AddError("Listing apps failed", err.Error())
+		return
+	}
+	m.Apps = []appItemModel{}
+	for _, a := range list {
+		if f := m.Category.ValueString(); f != "" && f != a.Category {
+			continue
+		}
+		if !m.PopularTR.IsNull() && m.PopularTR.ValueBool() && !a.PopularTR {
+			continue
+		}
+		if o := m.OS.ValueString(); o != "" {
+			ok := false
+			for _, x := range a.OS {
+				ok = ok || x == o
+			}
+			if !ok {
+				continue
+			}
+		}
+		oses := a.OS
+		if oses == nil {
+			oses = []string{}
+		}
+		m.Apps = append(m.Apps, appItemModel{types.StringValue(a.ID), types.StringValue(a.Name), types.StringValue(a.Category), oses,
+			types.Float64Value(a.MinRAMGB), types.Int64Value(a.MinDiskGB), types.Int64Value(a.MinCPU), types.BoolValue(a.NeedsDomain),
+			types.BoolValue(a.PopularTR), types.StringValue(a.Version), types.StringValue(a.License)})
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
+}
+
 /* ------------------------------------------------------------------ gyro_services */
 
 type servicesDS struct{ pd *providerData }

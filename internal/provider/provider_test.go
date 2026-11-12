@@ -36,7 +36,7 @@ func TestProviderSchema(t *testing.T) {
 	if n := len(p.Resources(context.Background())); n != 26 {
 		t.Fatalf("resources: %d", n)
 	}
-	if n := len(p.DataSources(context.Background())); n != 4 {
+	if n := len(p.DataSources(context.Background())); n != 5 {
 		t.Fatalf("data sources: %d", n)
 	}
 }

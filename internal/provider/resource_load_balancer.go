@@ -82,6 +82,7 @@ type lbModel struct {
 	Currency     types.String     `tfsdk:"currency"`
 	DueDate      types.String     `tfsdk:"due_date"`
 	Immediate    types.Bool       `tfsdk:"delete_immediately"`
+	ProjectID    types.Int64      `tfsdk:"project_id"`
 }
 
 func (r *lbResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -116,6 +117,7 @@ func (r *lbResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *r
 				Description:   "Billing cycle: monthly (default), quarterly, semiannually, annually.",
 				Validators:    []validator.String{stringvalidator.OneOf("monthly", "quarterly", "semiannually", "annually")},
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+			"project_id":    projectIDSchema("load balancer"),
 			"confirm_order": schema.BoolAttribute{Required: true, Description: "Must be true: creating a load balancer spends account balance."},
 			"algorithm": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("round_robin"),
 				Description: "round_robin (default) or least_connections.", Validators: []validator.String{stringvalidator.OneOf("round_robin", "least_connections")}},
@@ -556,7 +558,7 @@ func (r *lbResource) Create(ctx context.Context, req resource.CreateRequest, res
 			"Creating a gyro_load_balancer places a paid order from your account balance. Set confirm_order = true to proceed.")
 		return
 	}
-	res, err := r.pd.c.CreateLoadBalancer(ctx, client.CreateLoadBalancerRequest{Size: m.Size.ValueString(), Region: m.Region.ValueString(), Cycle: m.Cycle.ValueString(), Confirm: true}, client.NewIdempotencyKey())
+	res, err := r.pd.c.CreateLoadBalancer(ctx, client.CreateLoadBalancerRequest{Size: m.Size.ValueString(), Region: m.Region.ValueString(), Cycle: m.Cycle.ValueString(), Confirm: true, ProjectID: projectOrZero(m.ProjectID)}, client.NewIdempotencyKey())
 	if err != nil {
 		resp.Diagnostics.AddError("Ordering the load balancer failed", err.Error())
 		return
@@ -573,6 +575,9 @@ func (r *lbResource) Create(ctx context.Context, req resource.CreateRequest, res
 	partial := m
 	partial.Services, partial.Targets = nil, nil
 	applyLB(&partial, res.LoadBalancer)
+	if partial.ProjectID.IsUnknown() {
+		partial.ProjectID = types.Int64Null()
+	}
 	partial.Services, partial.Targets = m.Services, m.Targets
 	resp.Diagnostics.Append(resp.State.Set(ctx, &partial)...)
 	lb, err := r.waitLive(ctx, id)
@@ -589,6 +594,9 @@ func (r *lbResource) Create(ctx context.Context, req resource.CreateRequest, res
 		return
 	}
 	applyLB(&m, lb)
+	if m.ProjectID, err = syncProject(ctx, r.pd.c, id, m.ProjectID); err != nil {
+		resp.Diagnostics.AddError("Setting the load balancer project failed", err.Error())
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
 
@@ -617,6 +625,9 @@ func (r *lbResource) Read(ctx context.Context, req resource.ReadRequest, resp *r
 		return
 	}
 	applyLB(&m, lb)
+	if pid, err := r.pd.c.ServiceProjectID(ctx, id); err == nil && pid != nil {
+		m.ProjectID = types.Int64Value(*pid)
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
 
@@ -642,6 +653,10 @@ func (r *lbResource) Update(ctx context.Context, req resource.UpdateRequest, res
 		return
 	}
 	applyLB(&plan, lb)
+	if plan.ProjectID, err = syncProject(ctx, r.pd.c, id, plan.ProjectID); err != nil {
+		resp.Diagnostics.AddError("Setting the load balancer project failed", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 

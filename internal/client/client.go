@@ -304,6 +304,7 @@ type CreateServerRequest struct {
 	UserData   string  `json:"user_data,omitempty"`
 	DryRun     bool    `json:"dry_run,omitempty"`
 	Confirm    bool    `json:"confirm,omitempty"`
+	ProjectID  int64   `json:"project_id,omitempty"` // API 2.18.0; 0 = default project
 }
 
 type Quote struct {

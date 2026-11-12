@@ -1,3 +1,14 @@
+## 0.18.0 (2026-11-13)
+
+FEATURES:
+* **New resource** `gyro_project` (Gyro Public API 2.18.0 `/cloud/projects`): customer projects to group services (name, description,
+  color, icon). Deleting a project moves its services back to the default project (id 0). Import `<project_id>`.
+* **New resource** `gyro_service_project`: put any existing service into a project; destroy moves it back to the default project.
+
+ENHANCEMENTS:
+* `gyro_server` and `gyro_load_balancer`: new optional `project_id`. Sent with the order (validated before anything is created); changing it
+  later moves the service in place (no replacement). Ignored by older APIs without projects.
+
 ## 0.17.0 (2026-11-13)
 
 FEATURES:

@@ -75,6 +75,7 @@ type CreateLoadBalancerRequest struct {
 	Region    string `json:"region,omitempty"`
 	Cycle     string `json:"cycle,omitempty"`
 	Confirm   bool   `json:"confirm"`
+	ProjectID int64  `json:"project_id,omitempty"` // API 2.18.0
 }
 
 type CreateLoadBalancerResult struct {

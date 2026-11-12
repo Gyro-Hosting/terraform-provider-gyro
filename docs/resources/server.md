@@ -57,6 +57,7 @@ output "web_ipv4" {
 - `hostname` (String) Host name. Changes are applied in place (must be a FQDN when renaming).
 - `location` (String, Deprecated) Deprecated: legacy location code, kept so existing configurations and state keep working. Use region.
 - `plan` (String) Plan name from gyro_products, e.g. standart-2-4. Use together with region. Changing it replaces the server.
+- `project_id` (Number) Project of the server (gyro_project id, 0 = default project). Set at order time; changing it later moves the server in place.
 - `power_state` (String) Desired power state: running or stopped.
 - `product_id` (Number) Product id from gyro_products. Alternative to plan + region.
 - `region` (String) Region from gyro_locations, e.g. eu-de-1 or tr-ist-1 (Istanbul; images from gyro_images with region = "tr-ist-1"). Use together with plan. Changing it replaces the server.

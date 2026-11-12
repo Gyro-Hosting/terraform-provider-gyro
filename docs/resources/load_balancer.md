@@ -66,6 +66,7 @@ output "load_balancer_ip" {
 - `algorithm` (String) round_robin (default) or least_connections.
 - `cycle` (String) Billing cycle: monthly (default), quarterly, semiannually, annually.
 - `delete_immediately` (Boolean) destroy cancels at once (default). false = file a cancellation request instead.
+- `project_id` (Number) Project of the load balancer (gyro_project id, 0 = default project). Set at order time; changing it later moves the load balancer in place.
 - `region` (String) eu-de-1 (default), eu-de-2 or eu-fi-1. Targets must be cloud servers in an EU region. Changing it replaces the load balancer.
 - `services` (Attributes List) Listeners, keyed by listen_port. HTTPS needs certificate_ids of certificates on this load balancer (upload or Let's Encrypt from the panel/API). (see [below for nested schema](#nestedatt--services))
 - `targets` (Attributes List) Targets: your cloud servers (server_id = gyro_server id, same EU region), all your cloud servers (type all), or your dedicated server IPs. (see [below for nested schema](#nestedatt--targets))

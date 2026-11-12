@@ -54,6 +54,7 @@ type serverModel struct {
 	Currency     types.String  `tfsdk:"currency"`
 	DueDate      types.String  `tfsdk:"due_date"`
 	Immediate    types.Bool    `tfsdk:"delete_immediately"`
+	ProjectID    types.Int64   `tfsdk:"project_id"`
 }
 
 func (r *serverResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -112,6 +113,7 @@ func (r *serverResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"price":        schema.Float64Attribute{Computed: true, Description: "Recurring price per cycle (VAT excluded)."},
 			"currency":     str("Price currency."),
 			"due_date":     schema.StringAttribute{Computed: true},
+			"project_id":   projectIDSchema("server"),
 			"delete_immediately": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true),
 				Description: "destroy cancels at once (default; billing stops, server powered off and wiped after the grace period). false = file a cancellation request instead."},
 		},
@@ -220,6 +222,9 @@ func (r *serverResource) Create(ctx context.Context, req resource.CreateRequest,
 		Cycle: m.Cycle.ValueString(), Image: m.Image.ValueString(), Hostname: m.Hostname.ValueString(),
 		UserData: m.UserData.ValueString(), Confirm: true,
 	}
+	if !m.ProjectID.IsNull() && !m.ProjectID.IsUnknown() {
+		in.ProjectID = m.ProjectID.ValueInt64()
+	}
 	if in.ProductID == 0 && ((in.Plan == "" && in.ServerType == "") || (in.Region == "" && in.Location == "")) {
 		resp.Diagnostics.AddError("Missing product", "Set product_id, or both plan and region.")
 		return
@@ -257,6 +262,9 @@ func (r *serverResource) Create(ctx context.Context, req resource.CreateRequest,
 	// Persist the id right away so a timeout never leaves an untracked paid server.
 	partial := m
 	apply(&partial, res.Server)
+	if partial.ProjectID.IsUnknown() {
+		partial.ProjectID = types.Int64Null()
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &partial)...)
 
 	wctx, cancel := context.WithTimeout(ctx, r.pd.pollTimeout)
@@ -280,6 +288,9 @@ func (r *serverResource) Create(ctx context.Context, req resource.CreateRequest,
 		}
 	}
 	apply(&m, s)
+	if m.ProjectID, err = syncProject(ctx, r.pd.c, id, m.ProjectID); err != nil {
+		resp.Diagnostics.AddError("Setting the server project failed", err.Error())
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
 
@@ -321,6 +332,9 @@ func (r *serverResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 	apply(&m, s)
+	if pid, err := r.pd.c.ServiceProjectID(ctx, id); err == nil && pid != nil {
+		m.ProjectID = types.Int64Value(*pid)
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
 
@@ -357,6 +371,10 @@ func (r *serverResource) Update(ctx context.Context, req resource.UpdateRequest,
 		}
 	}
 	apply(&plan, s)
+	if plan.ProjectID, err = syncProject(ctx, r.pd.c, id, plan.ProjectID); err != nil {
+		resp.Diagnostics.AddError("Setting the server project failed", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 

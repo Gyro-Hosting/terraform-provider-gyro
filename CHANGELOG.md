@@ -1,3 +1,9 @@
+## 0.14.0 (2026-11-12)
+
+FEATURES:
+* **New resource** `gyro_server_ip` (Gyro Public API 2.16.0): one additional IPv4 address of a tr-ist-1 server (`POST/GET /cloud/servers/{id}/ips`,
+  `DELETE /cloud/servers/{id}/ips/{ip}`). The address is configured on the server automatically; billed hourly from the prepaid balance
+  (default 2 EUR per address-month) until destroyed, up to 5 per server by default. Import with `<server_id>/<ip>`. Acceptance test (mock) included.
 ## 0.13.0 (2026-11-12)
 
 FEATURES:

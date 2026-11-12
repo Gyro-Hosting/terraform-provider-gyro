@@ -99,7 +99,7 @@ func (p *gyroProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 }
 
 func (p *gyroProvider) Resources(_ context.Context) []func() resource.Resource {
-	return []func() resource.Resource{newServerResource, newSSHKeyResource, newWebhookResource, newCustomerResource, newAPIKeyResource, newMailboxResource, newAliasResource, newBucketResource, newBucketWebsiteResource, newBucketCorsResource, newStorageKeyResource, newDNSRecordResource, newAppResource, newLoadBalancerResource, newDNSZoneResource, newDNSRRsetResource, newFirewallResource, newSecurityGroupResource, newServerSecurityGroupsResource, newContainerServiceResource, newDNSAcmeKeyResource, newServerRdnsResource, newBucketObjectLockResource, newBucketNoncurrentResource, newServerTemplateResource}
+	return []func() resource.Resource{newServerResource, newSSHKeyResource, newWebhookResource, newCustomerResource, newAPIKeyResource, newMailboxResource, newAliasResource, newBucketResource, newBucketWebsiteResource, newBucketCorsResource, newStorageKeyResource, newDNSRecordResource, newAppResource, newLoadBalancerResource, newDNSZoneResource, newDNSRRsetResource, newFirewallResource, newSecurityGroupResource, newServerSecurityGroupsResource, newContainerServiceResource, newDNSAcmeKeyResource, newServerRdnsResource, newBucketObjectLockResource, newBucketNoncurrentResource, newServerTemplateResource, newServerIPResource}
 }
 
 func (p *gyroProvider) DataSources(_ context.Context) []func() datasource.DataSource {

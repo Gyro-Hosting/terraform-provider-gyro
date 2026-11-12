@@ -86,7 +86,7 @@ Optional:
 - `direction` (String) in (to the server) or out (new outbound connections; source = remote address).
 - `port` (String) any, 22, 80,443 or 1000-2000 (not for icmp/all).
 - `protocol` (String) tcp, udp, tcp_udp, icmp or all.
-- `source` (String) any, an IPv4 address/CIDR or a comma separated list, country:TR or not-country:TR (country add-on).
+- `source` (String) any, an IPv4 address/CIDR or a comma separated list. Country sources only when the platform offers them (policy capabilities.country_filter; currently not offered).
 - `type` (String) rule, brute_force (port = protected ports) or port_scan.
 
 ## Import

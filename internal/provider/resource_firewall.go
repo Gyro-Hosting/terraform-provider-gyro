@@ -100,7 +100,7 @@ func (r *firewallResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 					"direction":   str("in", "in (to the server) or out (new outbound connections; source = remote address)."),
 					"action":      str("allow", "allow or deny."),
 					"protocol":    str("tcp", "tcp, udp, tcp_udp, icmp or all."),
-					"source":      str("any", "any, an IPv4 address/CIDR or a comma separated list, country:TR or not-country:TR (country add-on)."),
+					"source":      str("any", "any, an IPv4 address/CIDR or a comma separated list. Country sources only when the platform offers them (policy capabilities.country_filter; currently not offered)."),
 					"destination": str("any", "any (all IP addresses of the server) or one IP address of the server."),
 					"port":        str("any", "any, 22, 80,443 or 1000-2000 (not for icmp/all)."),
 					"description": str("", "Up to 60 characters."),

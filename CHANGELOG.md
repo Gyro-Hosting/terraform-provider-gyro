@@ -1,3 +1,10 @@
+## 0.11.1 (2026-11-12)
+
+DOCUMENTATION:
+* `gyro_firewall`: country sources (`country:XX` / `not-country:XX`) are no longer offered on the Istanbul network firewall; the `source`
+  description now says so. Check `capabilities` of the firewall policy (Gyro Public API) for the features of the platform behind a server.
+  No schema or behaviour change.
+
 ## 0.11.0 (2026-11-12)
 
 FEATURES:

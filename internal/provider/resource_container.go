@@ -36,6 +36,29 @@ type containerSpec struct {
 	HealthPath string            `json:"health_path"`
 	Public     bool              `json:"public"`
 	RunAsUser  int64             `json:"run_as_user"`
+	// v0.16.0 (API 2.17.0)
+	Autoscaling *struct {
+		Enabled       bool  `json:"enabled"`
+		Min           int64 `json:"min"`
+		Max           int64 `json:"max"`
+		CPUPercent    int64 `json:"cpu_percent"`
+		MemoryPercent int64 `json:"memory_percent"`
+	} `json:"autoscaling"`
+	Alerts *struct {
+		MinReady int64 `json:"min_ready"`
+	} `json:"alerts"`
+}
+
+// containerAutoscaling: present = autoscaling on (replicas then follow the load between min and max).
+type containerAutoscaling struct {
+	Min           types.Int64 `tfsdk:"min"`
+	Max           types.Int64 `tfsdk:"max"`
+	CPUPercent    types.Int64 `tfsdk:"cpu_percent"`
+	MemoryPercent types.Int64 `tfsdk:"memory_percent"`
+}
+
+type containerNotification struct {
+	MinReady types.Int64 `tfsdk:"min_ready"`
 }
 
 type containerDomain struct {
@@ -67,26 +90,28 @@ type containerServiceResource struct{ pd *providerData }
 func newContainerServiceResource() resource.Resource { return &containerServiceResource{} }
 
 type containerServiceModel struct {
-	ID         types.String `tfsdk:"id"`
-	ServiceID  types.Int64  `tfsdk:"service_id"`
-	Name       types.String `tfsdk:"name"`
-	Image      types.String `tfsdk:"image"`
-	Port       types.Int64  `tfsdk:"port"`
-	Replicas   types.Int64  `tfsdk:"replicas"`
-	CPU        types.Int64  `tfsdk:"cpu_m"`
-	Memory     types.Int64  `tfsdk:"memory_mi"`
-	Public     types.Bool   `tfsdk:"public"`
-	HealthPath types.String `tfsdk:"health_path"`
-	Command    types.List   `tfsdk:"command"`
-	Args       types.List   `tfsdk:"args"`
-	Env        types.Map    `tfsdk:"env"`
-	Secrets    types.Map    `tfsdk:"secrets"`
-	Domains    types.Set    `tfsdk:"domains"`
-	RunAsUser  types.Int64  `tfsdk:"run_as_user"`
-	URL        types.String `tfsdk:"url"`
-	Host       types.String `tfsdk:"host"`
-	Revision   types.Int64  `tfsdk:"revision"`
-	State      types.String `tfsdk:"state"`
+	ID           types.String           `tfsdk:"id"`
+	ServiceID    types.Int64            `tfsdk:"service_id"`
+	Name         types.String           `tfsdk:"name"`
+	Image        types.String           `tfsdk:"image"`
+	Port         types.Int64            `tfsdk:"port"`
+	Replicas     types.Int64            `tfsdk:"replicas"`
+	CPU          types.Int64            `tfsdk:"cpu_m"`
+	Memory       types.Int64            `tfsdk:"memory_mi"`
+	Public       types.Bool             `tfsdk:"public"`
+	HealthPath   types.String           `tfsdk:"health_path"`
+	Command      types.List             `tfsdk:"command"`
+	Args         types.List             `tfsdk:"args"`
+	Env          types.Map              `tfsdk:"env"`
+	Secrets      types.Map              `tfsdk:"secrets"`
+	Domains      types.Set              `tfsdk:"domains"`
+	RunAsUser    types.Int64            `tfsdk:"run_as_user"`
+	Autoscaling  *containerAutoscaling  `tfsdk:"autoscaling"`
+	Notification *containerNotification `tfsdk:"notification"`
+	URL          types.String           `tfsdk:"url"`
+	Host         types.String           `tfsdk:"host"`
+	Revision     types.Int64            `tfsdk:"revision"`
+	State        types.String           `tfsdk:"state"`
 }
 
 func (r *containerServiceResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -116,10 +141,24 @@ func (r *containerServiceResource) Schema(_ context.Context, _ resource.SchemaRe
 			"secrets":     schema.MapAttribute{ElementType: types.StringType, Optional: true, Sensitive: true, Description: "Secret environment variables (write only; a key removed outside Terraform shows as a diff)."},
 			"domains":     schema.SetAttribute{ElementType: types.StringType, Optional: true, Description: "Your domains (CNAME to `host`); requires public = true."},
 			"run_as_user": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(0), Description: "User id in the container (0 = platform default 10001)."},
-			"url":         schema.StringAttribute{Computed: true, Description: "Public URL (public services)."},
-			"host":        schema.StringAttribute{Computed: true, Description: "Public host name; CNAME target for your domains."},
-			"revision":    schema.Int64Attribute{Computed: true, Description: "Current revision number."},
-			"state":       schema.StringAttribute{Computed: true, Description: "running, deploying, failing, pending, stopped or suspended (at the last read)."},
+			"autoscaling": schema.SingleNestedAttribute{Optional: true,
+				Description: "Autoscaling: when set, the replica count follows the average CPU (and optionally memory) use of the reserved size between min and max " +
+					"(up fast, down one per minute after 3 calm minutes); `replicas` is then ignored. Max cannot exceed the plan replica limit. Not a revision.",
+				Attributes: map[string]schema.Attribute{
+					"min":            schema.Int64Attribute{Required: true, Description: "Minimum replicas (>= 1)."},
+					"max":            schema.Int64Attribute{Required: true, Description: "Maximum replicas (<= plan limit)."},
+					"cpu_percent":    schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(70), Description: "Target average CPU use in % of cpu_m (10-95)."},
+					"memory_percent": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(0), Description: "Target average memory use in % of memory_mi (0 = off, else 10-95)."},
+				}},
+			"notification": schema.SingleNestedAttribute{Optional: true,
+				Description: "Per-service alert threshold; channels are set with gyro_container_notifications.",
+				Attributes: map[string]schema.Attribute{
+					"min_ready": schema.Int64Attribute{Required: true, Description: "Alert when fewer replicas are ready (0 = off)."},
+				}},
+			"url":      schema.StringAttribute{Computed: true, Description: "Public URL (public services)."},
+			"host":     schema.StringAttribute{Computed: true, Description: "Public host name; CNAME target for your domains."},
+			"revision": schema.Int64Attribute{Computed: true, Description: "Current revision number."},
+			"state":    schema.StringAttribute{Computed: true, Description: "running, deploying, failing, pending, stopped or suspended (at the last read)."},
 		},
 	}
 }
@@ -159,7 +198,23 @@ func ctrSet(ctx context.Context, s types.Set) []string {
 func (m *containerServiceModel) spec(ctx context.Context) map[string]any {
 	return map[string]any{"image": m.Image.ValueString(), "port": m.Port.ValueInt64(), "replicas": m.Replicas.ValueInt64(),
 		"cpu_m": m.CPU.ValueInt64(), "memory_mi": m.Memory.ValueInt64(), "public": m.Public.ValueBool(), "health_path": m.HealthPath.ValueString(),
-		"command": ctrList(ctx, m.Command), "args": ctrList(ctx, m.Args), "env": ctrMap(ctx, m.Env), "run_as_user": m.RunAsUser.ValueInt64()}
+		"command": ctrList(ctx, m.Command), "args": ctrList(ctx, m.Args), "env": ctrMap(ctx, m.Env), "run_as_user": m.RunAsUser.ValueInt64(),
+		"autoscaling": m.autoscaling(), "alerts": map[string]any{"min_ready": m.minReady()}}
+}
+
+func (m *containerServiceModel) autoscaling() map[string]any {
+	if m.Autoscaling == nil {
+		return map[string]any{"enabled": false}
+	}
+	a := m.Autoscaling
+	return map[string]any{"enabled": true, "min": a.Min.ValueInt64(), "max": a.Max.ValueInt64(), "cpu_percent": a.CPUPercent.ValueInt64(), "memory_percent": a.MemoryPercent.ValueInt64()}
+}
+
+func (m *containerServiceModel) minReady() int64 {
+	if m.Notification == nil {
+		return 0
+	}
+	return m.Notification.MinReady.ValueInt64()
 }
 
 func (r *containerServiceResource) get(ctx context.Context, sid int64, name string) (*containerView, error) {
@@ -177,7 +232,24 @@ func (r *containerServiceResource) apply(ctx context.Context, m *containerServic
 	m.ID = types.StringValue(fmt.Sprintf("%d/%s", sid(m.ServiceID), v.Name))
 	m.Name = types.StringValue(v.Name)
 	m.Image = types.StringValue(sp.Image)
-	m.Port, m.Replicas, m.CPU, m.Memory = types.Int64Value(sp.Port), types.Int64Value(sp.Replicas), types.Int64Value(sp.CPU), types.Int64Value(sp.Memory)
+	m.Port, m.CPU, m.Memory = types.Int64Value(sp.Port), types.Int64Value(sp.CPU), types.Int64Value(sp.Memory)
+	if sp.Autoscaling != nil && sp.Autoscaling.Enabled {
+		// the autoscaler owns the replica count: keep the configured value (no drift)
+		if m.Replicas.IsNull() || m.Replicas.IsUnknown() {
+			m.Replicas = types.Int64Value(1)
+		}
+		mp := sp.Autoscaling.MemoryPercent
+		m.Autoscaling = &containerAutoscaling{Min: types.Int64Value(sp.Autoscaling.Min), Max: types.Int64Value(sp.Autoscaling.Max),
+			CPUPercent: types.Int64Value(sp.Autoscaling.CPUPercent), MemoryPercent: types.Int64Value(mp)}
+	} else {
+		m.Replicas = types.Int64Value(sp.Replicas)
+		m.Autoscaling = nil
+	}
+	if sp.Alerts != nil && sp.Alerts.MinReady > 0 {
+		m.Notification = &containerNotification{MinReady: types.Int64Value(sp.Alerts.MinReady)}
+	} else if m.Notification != nil {
+		m.Notification = &containerNotification{MinReady: types.Int64Value(0)}
+	}
 	m.Public, m.HealthPath, m.RunAsUser = types.BoolValue(sp.Public), types.StringValue(sp.HealthPath), types.Int64Value(sp.RunAsUser)
 	if len(sp.Command) > 0 || !m.Command.IsNull() {
 		m.Command, _ = types.ListValueFrom(ctx, types.StringType, nonNil(sp.Command))

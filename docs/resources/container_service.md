@@ -25,7 +25,6 @@ resource "gyro_container_service" "web" {
   name        = "web"
   image       = "ghcr.io/acme/web:1.4"
   port        = 8080
-  replicas    = 2
   cpu_m       = 500
   memory_mi   = 512
   public      = true
@@ -33,6 +32,17 @@ resource "gyro_container_service" "web" {
 
   env     = { MODE = "prod" }
   secrets = { DB_PASSWORD = var.db_password } # write only, never read back
+
+  # Replicas follow the load: 2..6, target 70 % CPU of cpu_m (replicas is ignored while autoscaling is set).
+  autoscaling = {
+    min         = 2
+    max         = 6
+    cpu_percent = 70
+  }
+  # Alert when fewer than 2 replicas are ready (channels: gyro_container_notifications).
+  notification = {
+    min_ready = 2
+  }
 
   # Point a CNAME from your domain to gyro_container_service.web.host first.
   domains = ["app.example.com"]
@@ -55,12 +65,14 @@ output "web_url" {
 ### Optional
 
 - `args` (List of String) Arguments for the command.
+- `autoscaling` (Attributes) Autoscaling: when set, the replica count follows the average CPU (and optionally memory) use of the reserved size between min and max (up fast, down one per minute after 3 calm minutes); `replicas` is then ignored. Max cannot exceed the plan replica limit. Not a revision. (see [below for nested schema](#nestedatt--autoscaling))
 - `command` (List of String) Override the image entrypoint.
 - `cpu_m` (Number) CPU per instance in millicores.
 - `domains` (Set of String) Your domains (CNAME to `host`); requires public = true.
 - `env` (Map of String) Plain environment variables.
 - `health_path` (String) HTTP health check path (empty = TCP check).
 - `memory_mi` (Number) Memory per instance in MiB.
+- `notification` (Attributes) Per-service alert threshold; channels are set with gyro_container_notifications. (see [below for nested schema](#nestedatt--notification))
 - `port` (Number) Container port (0 = no network port). Use >= 1024 (non-root).
 - `public` (Boolean) Public HTTPS address <name>-<code>.gyroapp.net.
 - `replicas` (Number) Number of instances (0 = stopped).
@@ -74,6 +86,27 @@ output "web_url" {
 - `revision` (Number) Current revision number.
 - `state` (String) running, deploying, failing, pending, stopped or suspended (at the last read).
 - `url` (String) Public URL (public services).
+
+<a id="nestedatt--autoscaling"></a>
+### Nested Schema for `autoscaling`
+
+Required:
+
+- `max` (Number) Maximum replicas (<= plan limit).
+- `min` (Number) Minimum replicas (>= 1).
+
+Optional:
+
+- `cpu_percent` (Number) Target average CPU use in % of cpu_m (10-95).
+- `memory_percent` (Number) Target average memory use in % of memory_mi (0 = off, else 10-95).
+
+
+<a id="nestedatt--notification"></a>
+### Nested Schema for `notification`
+
+Required:
+
+- `min_ready` (Number) Alert when fewer replicas are ready (0 = off).
 
 ## Import
 

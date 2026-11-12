@@ -1,3 +1,13 @@
+## 0.16.0 (2026-11-12)
+
+FEATURES:
+* `gyro_container_service`: new `autoscaling` attribute (`min`, `max`, `cpu_percent` default 70, `memory_percent` 0 = off; Gyro Public API 2.17.0
+  `PUT /cloud/containers/{id}/services/{name}/autoscaling`). While set, the replica count follows the load and `replicas` is ignored (no drift).
+  New `notification` attribute (`min_ready`): alert when fewer replicas are ready. Both are settings, not revisions.
+* **New resource** `gyro_container_notifications`: alert channels of a Gyro Containers environment (e-mail, SMS, Telegram chat id, signed webhook,
+  events, cooldown, resolved messages; `GET/PUT /cloud/containers/{id}/notifications`). `webhook_secret` (sensitive) verifies
+  `X-Gyro-Signature = sha256=HMAC(secret, X-Gyro-Timestamp + "." + body)`. Import with the environment id. Acceptance tests (mock) included.
+
 ## 0.15.0 (2026-11-12)
 
 FEATURES:

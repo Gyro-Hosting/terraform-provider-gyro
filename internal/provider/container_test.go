@@ -22,6 +22,7 @@ type containerMock struct {
 	secrets map[string]map[string]string
 	domains map[string][]string
 	calls   []string
+	ntf     map[string]any
 }
 
 func newContainerMock() *containerMock {
@@ -43,6 +44,49 @@ func (m *containerMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fail := func(code int, c string) {
 		w.WriteHeader(code)
 		json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": c, "message": c}})
+	}
+	if seg[0] == "7" && len(seg) >= 2 && seg[1] == "notifications" {
+		if m.ntf == nil {
+			m.ntf = map[string]any{"email": 1, "sms": 0, "telegram": "", "webhook_url": "", "cooldown": 30, "resolved": 1, "secret": ""}
+		}
+		b01 := func(v any) int {
+			if v == true || v == float64(1) {
+				return 1
+			}
+			return 0
+		}
+		switch {
+		case len(seg) == 2 && r.Method == "PUT":
+			for _, k := range []string{"email", "sms", "resolved"} {
+				if v, ok := body[k]; ok {
+					m.ntf[k] = b01(v)
+				}
+			}
+			for _, k := range []string{"telegram", "webhook_url", "events"} {
+				if v, ok := body[k]; ok {
+					m.ntf[k] = v
+				}
+			}
+			if v, ok := body["cooldown"]; ok {
+				m.ntf["cooldown"] = int(v.(float64))
+			}
+			if m.ntf["webhook_url"] != "" && m.ntf["secret"] == "" {
+				m.ntf["secret"] = "whsec_mock1"
+			}
+			ok(map[string]any{"status": "successful"})
+		case len(seg) == 2 && r.Method == "GET":
+			ev := map[string]int{}
+			for _, e := range strings.Split(fmt.Sprint(m.ntf["events"]), ",") {
+				ev[e] = 1
+			}
+			ok(map[string]any{"settings": map[string]any{"email": m.ntf["email"], "sms": m.ntf["sms"], "telegram": m.ntf["telegram"], "webhook_url": m.ntf["webhook_url"],
+				"events": ev, "cooldown": m.ntf["cooldown"], "resolved": m.ntf["resolved"], "webhook_secret_set": m.ntf["secret"] != ""}, "conditions": []any{}})
+		case len(seg) == 3 && seg[2] == "webhook-secret":
+			ok(map[string]any{"secret": m.ntf["secret"]})
+		default:
+			fail(404, "not_found")
+		}
+		return
 	}
 	if seg[0] != "7" || len(seg) < 2 || seg[1] != "services" {
 		fail(404, "service_not_found")
@@ -76,6 +120,9 @@ func (m *containerMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if body["run_as_user"] == float64(0) {
 			body["run_as_user"] = float64(0)
 		}
+		if a, _ := body["autoscaling"].(map[string]any); a != nil && a["enabled"] == false {
+			delete(body, "autoscaling")
+		}
 		m.svcs[n], m.rev[n] = body, 1
 		ok(view(n))
 		return
@@ -98,10 +145,19 @@ func (m *containerMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ok(view(n))
 	case len(seg) == 3 && r.Method == "PATCH":
 		sp := body["spec"].(map[string]any)
+		onlySettings := true
 		for k, v := range sp {
+			if k != "autoscaling" && k != "alerts" && k != "replicas" && fmt.Sprint(m.svcs[n][k]) != fmt.Sprint(v) {
+				onlySettings = false
+			}
 			m.svcs[n][k] = v
 		}
-		m.rev[n]++
+		if a, _ := sp["autoscaling"].(map[string]any); a != nil && a["enabled"] == false {
+			delete(m.svcs[n], "autoscaling")
+		}
+		if !onlySettings {
+			m.rev[n]++
+		}
 		ok(view(n))
 	case len(seg) == 3 && r.Method == "DELETE":
 		if body["confirm"] != true {
@@ -199,5 +255,68 @@ resource "gyro_container_service" "web" {
 		if strings.Contains(c, "secrets") && strings.Contains(c, "s2") {
 			t.Fatal("secret value in path")
 		}
+	}
+}
+
+func TestAccMockContainerAutoscalingNotifications(t *testing.T) {
+	cm := newContainerMock()
+	srv := httptest.NewServer(cm)
+	t.Cleanup(srv.Close)
+	prov := fmt.Sprintf("provider \"gyro\" {\n  endpoint = %q\n  token = \"wck_testA\"\n}\n", srv.URL+"/api/v1/client")
+	svc := func(as string) string {
+		return prov + `
+resource "gyro_container_service" "api" {
+  service_id = 7
+  name       = "api"
+  image      = "ghcr.io/acme/api:1"
+  port       = 8080
+` + as + `
+}
+`
+	}
+	ntf := `
+resource "gyro_container_notifications" "n" {
+  service_id  = 7
+  email       = true
+  telegram    = "123456789"
+  webhook_url = "https://hooks.example.com/gyro"
+  events      = ["down", "crashloop", "capacity"]
+  cooldown    = 15
+}
+`
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{Config: svc(`  autoscaling = { min = 1, max = 4 }
+  notification = { min_ready = 1 }`) + ntf, Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr("gyro_container_service.api", "autoscaling.max", "4"),
+				resource.TestCheckResourceAttr("gyro_container_service.api", "autoscaling.cpu_percent", "70"),
+				resource.TestCheckResourceAttr("gyro_container_service.api", "notification.min_ready", "1"),
+				resource.TestCheckResourceAttr("gyro_container_notifications.n", "events.#", "3"),
+				resource.TestCheckResourceAttr("gyro_container_notifications.n", "webhook_secret", "whsec_mock1"),
+				resource.TestCheckResourceAttr("gyro_container_notifications.n", "cooldown", "15"),
+			)},
+			{Config: svc(`  autoscaling = { min = 1, max = 4 }
+  notification = { min_ready = 1 }`) + ntf, PlanOnly: true},
+			{Config: svc(`  autoscaling = { min = 2, max = 6, cpu_percent = 60, memory_percent = 80 }`) + ntf, Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr("gyro_container_service.api", "autoscaling.min", "2"),
+				resource.TestCheckResourceAttr("gyro_container_service.api", "autoscaling.memory_percent", "80"),
+				resource.TestCheckResourceAttr("gyro_container_service.api", "revision", "1"), // settings are not a revision
+			)},
+			{Config: svc(`  replicas = 3`), Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckNoResourceAttr("gyro_container_service.api", "autoscaling.min"),
+				resource.TestCheckResourceAttr("gyro_container_service.api", "replicas", "3"),
+			)},
+			{ResourceName: "gyro_container_service.api", ImportState: true, ImportStateId: "7/api", ImportStateVerify: true, ImportStateVerifyIgnore: []string{"state"}},
+		},
+	})
+	sent := false
+	for _, c := range cm.calls {
+		if strings.HasPrefix(c, "PUT 7/notifications") {
+			sent = true
+		}
+	}
+	if !sent {
+		t.Fatal("notifications were never written")
 	}
 }

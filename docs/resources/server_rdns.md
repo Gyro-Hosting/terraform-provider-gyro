@@ -7,7 +7,7 @@ description: |-
 
 # gyro_server_rdns (Resource)
 
-Reverse DNS (PTR) record of one address of a server. In region tr-ist-1 a PTR is a request that goes live after approval (status pending -> active); a new address without a record gets one created. Destroy resets the address to the default.
+Reverse DNS (PTR) record of one address of a server. In region tr-ist-1 (Gyro Bulut İstanbul) every address already has an automatic default PTR `<a-b-c-d>.ip.gyrohosting.com`; this resource replaces it with your own name (live within seconds, status active). Names under Gyro domains and protected brand names are refused. Destroy resets the address to the default.
 
 ## Example Usage
 
@@ -30,6 +30,7 @@ resource "gyro_server_rdns" "mail" {
 ### Read-Only
 
 - `id` (String) The ID of this resource.
+- `default` (Boolean) tr-ist-1: true when the address carries the automatic default name (the resource is then recreated).
 - `status` (String) tr-ist-1: none | pending | active | rejected (empty in other regions).
 
 ## Import

@@ -1,3 +1,10 @@
+## 0.16.1 (2026-11-13)
+
+ENHANCEMENTS:
+* `gyro_server_rdns` (Gyro Public API 2.17.2): tr-ist-1 reverse DNS is published automatically. Every address has a default PTR
+  `<a-b-c-d>.ip.gyrohosting.com`; a custom `hostname` is live within seconds (`status` active). New computed `default` attribute;
+  when an address is back on the default name the resource is removed from state (recreated on the next apply).
+
 ## 0.16.0 (2026-11-12)
 
 FEATURES:

@@ -629,12 +629,12 @@ func (a *API) serverRoute(w http.ResponseWriter, r *http.Request, s *server, seg
 				s.Rdns[ip] = h
 			}
 		}
-		var host any
-		st := "none"
+		// 2.17.2: every address has an automatic default PTR; custom names are active at once
+		host, st, def := any(strings.ReplaceAll(ip, ".", "-")+".ip.gyrohosting.com"), "active", true
 		if h, has := s.Rdns[ip]; has {
-			host, st = h, "pending"
+			host, def = h, false
 		}
-		ok(w, 200, []any{map[string]any{"ip": ip, "hostname": host, "version": "ipv4", "status": st}}, nil)
+		ok(w, 200, []any{map[string]any{"ip": ip, "hostname": host, "version": "ipv4", "status": st, "default": def}}, nil)
 	case len(seg) == 4 && seg[3] == "snapshots" && m == "GET":
 		ok(w, 200, map[string]any{"items": s.Snapshots, "quota_gb": 20}, nil)
 	case len(seg) == 4 && seg[3] == "snapshots" && m == "POST":

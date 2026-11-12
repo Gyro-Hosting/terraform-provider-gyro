@@ -28,12 +28,14 @@ type serverRdnsModel struct {
 	IP       types.String `tfsdk:"ip"`
 	Hostname types.String `tfsdk:"hostname"`
 	Status   types.String `tfsdk:"status"`
+	Default  types.Bool   `tfsdk:"default"`
 }
 
 type rdnsEntry struct {
 	IP       string  `json:"ip"`
 	Hostname *string `json:"hostname"`
 	Status   string  `json:"status"`
+	Default  bool    `json:"default"`
 }
 
 func (r *serverRdnsResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -42,14 +44,16 @@ func (r *serverRdnsResource) Metadata(_ context.Context, req resource.MetadataRe
 
 func (r *serverRdnsResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Reverse DNS (PTR) record of one address of a server. In region tr-ist-1 a PTR is a request that goes live after approval " +
-			"(status pending -> active); a new address without a record gets one created. Destroy resets the address to the default.",
+		Description: "Reverse DNS (PTR) record of one address of a server. In region tr-ist-1 (Gyro Bulut İstanbul) every address already has an " +
+			"automatic default PTR `<a-b-c-d>.ip.gyrohosting.com`; this resource replaces it with your own name (live within seconds, status active). " +
+			"Names under Gyro domains and protected brand names are refused. Destroy resets the address to the default.",
 		Attributes: map[string]schema.Attribute{
 			"id":        schema.StringAttribute{Computed: true, PlanModifiers: keep},
 			"server_id": schema.Int64Attribute{Required: true, PlanModifiers: replaceI, Description: "Server id."},
 			"ip":        schema.StringAttribute{Required: true, PlanModifiers: replaceS, Description: "An address of this server."},
 			"hostname":  schema.StringAttribute{Required: true, Description: "Fully qualified host name for the PTR record, e.g. mail.example.com."},
 			"status":    schema.StringAttribute{Computed: true, Description: "tr-ist-1: none | pending | active | rejected (empty in other regions)."},
+			"default":   schema.BoolAttribute{Computed: true, Description: "tr-ist-1: true when the address carries the automatic default name (the resource is then recreated)."},
 		},
 	}
 }
@@ -77,6 +81,7 @@ func (r *serverRdnsResource) apply(m *serverRdnsModel, e *rdnsEntry) {
 		m.Hostname = types.StringValue(*e.Hostname)
 	}
 	m.Status = types.StringValue(e.Status)
+	m.Default = types.BoolValue(e.Default)
 }
 
 func (r *serverRdnsResource) put(ctx context.Context, m *serverRdnsModel, host string, d interface{ AddError(string, string) }) bool {
@@ -120,7 +125,7 @@ func (r *serverRdnsResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 	e := r.find(out, m.IP.ValueString())
-	if e == nil || e.Hostname == nil {
+	if e == nil || e.Hostname == nil || e.Default { // default name = no custom PTR (API 2.17.2)
 		resp.State.RemoveResource(ctx)
 		return
 	}

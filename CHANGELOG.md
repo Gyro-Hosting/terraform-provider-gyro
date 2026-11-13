@@ -1,3 +1,9 @@
+## 0.24.1 (2026-11-13)
+
+NOTES:
+* `gyro_prepaid_estimate` (Gyro Public API 2.24.1): serverless containers use the same monthly basis as every prepaid product - at most 672
+  charged hours a calendar month; `hours` defaults to 672 and `monthly` is 672 hours of running time. Documentation only, no schema change.
+
 ## 0.24.0 (2026-11-13)
 
 FEATURES:

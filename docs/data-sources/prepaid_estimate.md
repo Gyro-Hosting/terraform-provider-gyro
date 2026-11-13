@@ -16,7 +16,7 @@ Cost of prepaid (hourly, from the account balance) Gyro Cloud Istanbul servers, 
 # What would two 0.5 vCPU / 1 GB serverless containers and one Istanbul server cost?
 data "gyro_prepaid_estimate" "stack" {
   items = [
-    { cpu_m = 500, memory_mi = 1024, count = 2, hours = 672 },
+    { cpu_m = 500, memory_mi = 1024, count = 2, hours = 730 },
     { plan = "standart-2-4" },
   ]
 }
@@ -52,7 +52,7 @@ Optional:
 
 - `count` (Number) Copies / servers (default 1, max 100).
 - `cpu_m` (Number) Serverless container: CPU per copy in millicores (250, 500, 1000, 2000, 4000).
-- `hours` (Number) Serverless container: running hours for total (default 672 = one month; at most 672 hours a month are charged).
+- `hours` (Number) Serverless container: running hours for total (default 730 = a full month; no monthly cap).
 - `memory_mi` (Number) Serverless container: memory per copy in MiB.
 - `plan` (String) Prepaid plan name, e.g. standart-2-4 or ecs-baslangic.
 - `product_id` (Number)
@@ -61,7 +61,7 @@ Read-Only:
 
 - `capped` (Boolean) true: the item never costs more than its monthly price in a calendar month.
 - `hourly_eur` (Number)
-- `monthly` (Number) Monthly price (capped plans) or 672 hours of running time (serverless; at most 672 charged hours a month).
+- `monthly` (Number) Monthly price (capped plans) or a full month (730 hours) of running time (serverless; no monthly cap).
 - `monthly_eur` (Number)
 - `total` (Number) Serverless: hours x hourly; plans: same as monthly.
 - `type` (String) server, container or serverless.

@@ -1,3 +1,9 @@
+## 0.24.2 (2026-11-14)
+
+NOTES:
+* `gyro_prepaid_estimate` (Gyro Public API 2.24.2): serverless containers are billed for the full month again - no monthly cap; `hours` defaults
+  to 730 (a full month) and `monthly` is 730 hours of running time. Replaces the 672-hour note of 0.24.1. Documentation only, no schema change.
+
 ## 0.24.1 (2026-11-13)
 
 NOTES:

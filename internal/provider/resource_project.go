@@ -296,7 +296,7 @@ func (r *serviceProjectResource) Delete(ctx context.Context, req resource.Delete
 
 func (r *serviceProjectResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	if _, err := strconv.ParseInt(req.ID, 10, 64); err != nil {
-		resp.Diagnostics.AddError("Invalid import id", "Use the numeric service id, e.g. terraform import gyro_service_project.dns 17488")
+		resp.Diagnostics.AddError("Invalid import id", "Use the numeric service id, e.g. terraform import gyro_service_project.dns 12345")
 		return
 	}
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)

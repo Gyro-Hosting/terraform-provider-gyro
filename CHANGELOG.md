@@ -1,3 +1,8 @@
+## 0.20.1 (2026-11-13)
+
+DOCUMENTATION:
+* Examples for `gyro_project` and `gyro_service_project` use neutral placeholder names and ids. No functional change.
+
 ## 0.20.0 (2026-11-13)
 
 FEATURES:

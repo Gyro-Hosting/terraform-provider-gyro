@@ -1,7 +1,7 @@
 # A project per business / client / environment. Destroying it only deletes the project:
 # its services go back to the default project (id 0).
-resource "gyro_project" "isinolacak" {
-  name        = "İşin Olacak"
+resource "gyro_project" "gyroproje" {
+  name        = "Gyro Proje"
   description = "Web + API + CDN"
   color       = "blue"
   icon        = "rocket-takeoff"
@@ -13,5 +13,5 @@ resource "gyro_server" "web" {
   region        = "tr-ist-1"
   image         = "ubuntu-24.04"
   confirm_order = true
-  project_id    = tonumber(gyro_project.isinolacak.id)
+  project_id    = tonumber(gyro_project.gyroproje.id)
 }

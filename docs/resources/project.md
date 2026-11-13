@@ -15,8 +15,8 @@ A project groups services in the client area and the API (e.g. one per business,
 ```terraform
 # A project per business / client / environment. Destroying it only deletes the project:
 # its services go back to the default project (id 0).
-resource "gyro_project" "isinolacak" {
-  name        = "İşin Olacak"
+resource "gyro_project" "gyroproje" {
+  name        = "Gyro Proje"
   description = "Web + API + CDN"
   color       = "blue"
   icon        = "rocket-takeoff"
@@ -28,7 +28,7 @@ resource "gyro_server" "web" {
   region        = "tr-ist-1"
   image         = "ubuntu-24.04"
   confirm_order = true
-  project_id    = tonumber(gyro_project.isinolacak.id)
+  project_id    = tonumber(gyro_project.gyroproje.id)
 }
 ```
 
@@ -57,5 +57,5 @@ Import is supported using the following syntax:
 The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
-terraform import gyro_project.isinolacak 6
+terraform import gyro_project.gyroproje 6
 ```

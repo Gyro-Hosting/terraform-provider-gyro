@@ -15,8 +15,8 @@ Puts any existing service (DNS, storage, mail, containers, VDS, ...) into a proj
 ```terraform
 # Put any existing service (DNS, storage, mail, containers, VDS ...) into a project.
 resource "gyro_service_project" "dns" {
-  service_id = 17488
-  project_id = tonumber(gyro_project.isinolacak.id)
+  service_id = 12345
+  project_id = tonumber(gyro_project.gyroproje.id)
 }
 ```
 
@@ -39,5 +39,5 @@ Import is supported using the following syntax:
 The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
-terraform import gyro_service_project.dns 17488
+terraform import gyro_service_project.dns 12345
 ```

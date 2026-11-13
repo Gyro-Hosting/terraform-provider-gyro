@@ -1,1 +1,1 @@
-terraform import gyro_project.isinolacak 6
+terraform import gyro_project.gyroproje 6

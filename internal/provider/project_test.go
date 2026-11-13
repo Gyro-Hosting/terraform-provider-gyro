@@ -152,7 +152,7 @@ resource "gyro_project" "a" {
   icon  = "rocket-takeoff"
 }
 resource "gyro_project" "b" {
-  name        = "Unibum"
+  name        = "Gyro Test"
   description = "Mobile backend"
 }
 resource "gyro_server" "s" {
@@ -171,8 +171,8 @@ resource "gyro_service_project" "dns" {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
-			{Config: cfg("İşin Olacak", "blue", "tonumber(gyro_project.a.id)"), Check: resource.ComposeAggregateTestCheckFunc(
-				resource.TestCheckResourceAttr("gyro_project.a", "name", "İşin Olacak"),
+			{Config: cfg("Gyro Proje", "blue", "tonumber(gyro_project.a.id)"), Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr("gyro_project.a", "name", "Gyro Proje"),
 				resource.TestCheckResourceAttr("gyro_project.b", "color", "blue"),
 				resource.TestCheckResourceAttr("gyro_project.b", "icon", "folder"),
 				resource.TestCheckResourceAttrPair("gyro_server.s", "project_id", "gyro_project.a", "id"),
@@ -180,8 +180,8 @@ resource "gyro_service_project" "dns" {
 			)},
 			{ResourceName: "gyro_project.b", ImportState: true, ImportStateVerify: true, ImportStateVerifyIgnore: []string{"service_count"}},
 			// rename + recolour in place; server moves to project b without replacement
-			{Config: cfg("İşin Olacak 2", "teal", "tonumber(gyro_project.b.id)"), Check: resource.ComposeAggregateTestCheckFunc(
-				resource.TestCheckResourceAttr("gyro_project.a", "name", "İşin Olacak 2"),
+			{Config: cfg("Gyro Proje 2", "teal", "tonumber(gyro_project.b.id)"), Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr("gyro_project.a", "name", "Gyro Proje 2"),
 				resource.TestCheckResourceAttr("gyro_project.a", "color", "teal"),
 				resource.TestCheckResourceAttrPair("gyro_server.s", "project_id", "gyro_project.b", "id"),
 				func(s *terraform.State) error {
@@ -194,7 +194,7 @@ resource "gyro_service_project" "dns" {
 				},
 			)},
 			// back to the default project
-			{Config: cfg("İşin Olacak 2", "teal", "0"), Check: resource.TestCheckResourceAttr("gyro_server.s", "project_id", "0")},
+			{Config: cfg("Gyro Proje 2", "teal", "0"), Check: resource.TestCheckResourceAttr("gyro_server.s", "project_id", "0")},
 		},
 	})
 	if len(x.projects) != 0 {

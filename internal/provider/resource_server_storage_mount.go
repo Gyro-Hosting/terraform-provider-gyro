@@ -34,6 +34,8 @@ type storageMountModel struct {
 	Bucket     types.String `tfsdk:"bucket"`
 	MountPoint types.String `tfsdk:"mount_point"`
 	ReadOnly   types.Bool   `tfsdk:"read_only"`
+	AcceptVer  types.Bool   `tfsdk:"accept_versioning"`
+	Protected  types.Bool   `tfsdk:"protected"`
 	MountID    types.Int64  `tfsdk:"mount_id"`
 	Name       types.String `tfsdk:"name"`
 	State      types.String `tfsdk:"state"`
@@ -49,6 +51,7 @@ type storageMount struct {
 	Bucket     string `json:"bucket"`
 	MountPoint string `json:"mount_point"`
 	ReadOnly   bool   `json:"read_only"`
+	Protected  bool   `json:"protected"`
 	Name       string `json:"name"`
 	State      string `json:"state"`
 	Automatic  bool   `json:"automatic"`
@@ -65,13 +68,13 @@ func (r *storageMountResource) Metadata(_ context.Context, req resource.Metadata
 }
 
 func (r *storageMountResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	replB := []planmodifier.Bool{boolplanmodifier.RequiresReplace()}
+	replBK := []planmodifier.Bool{boolplanmodifier.RequiresReplaceIfConfigured(), boolplanmodifier.UseStateForUnknown()}
 	replSK := []planmodifier.String{stringplanmodifier.RequiresReplace(), stringplanmodifier.UseStateForUnknown()}
 	resp.Schema = schema.Schema{
 		Description: "Mounts a bucket of your Gyro Object Storage service on a Linux server (systemd) as a folder (rclone FUSE mount with a local " +
 			"write cache, starts on boot). Each mount has its own access key limited to that one bucket (read-only or read/write), removed on destroy. " +
 			"Gyro Cloud Istanbul (tr-ist-1) servers apply it automatically (automatic = true); on other servers run install_command once " +
-			"(valid 60 minutes, single use). Free; S3 traffic counts towards the storage service. Not available for Protected Storage buckets.",
+			"(valid 60 minutes, single use). Free; S3 traffic counts towards the storage service. Protected Storage buckets mount read-only by default (read/write needs accept_versioning).",
 		Attributes: map[string]schema.Attribute{
 			"id":                 schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "<server_id>/<mount_id>"},
 			"server_id":          schema.Int64Attribute{Required: true, PlanModifiers: replaceI, Description: "Server service id."},
@@ -79,7 +82,13 @@ func (r *storageMountResource) Schema(_ context.Context, _ resource.SchemaReques
 			"bucket":             schema.StringAttribute{Required: true, PlanModifiers: replaceS, Description: "Bucket name in that service (renaming the bucket later does not break the mount)."},
 			"mount_point": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: replSK,
 				Description: "Absolute path under /mnt, /srv, /data, /media, /opt, /home or /var/www; default /mnt/<bucket>. Must be empty or missing on the server."},
-			"read_only": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), PlanModifiers: replB},
+			"read_only": schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: replBK,
+				Description: "Default: false on Object Storage, true on Protected Storage (API 2.20.0)."},
+			"accept_versioning": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false),
+				Description: "Protected Storage read/write only: confirms that every write/overwrite creates a new version, deletes only add a delete marker, " +
+					"locked files cannot be deleted and used space/cost grow (required for read_only = false on Protected Storage)."},
+			"protected": schema.BoolAttribute{Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+				Description: "true when the bucket is on Protected Storage (versioned / lockable)."},
 			"mount_id":  schema.Int64Attribute{Computed: true},
 			"name":      schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "systemd unit instance gyro-s3mount@<name>."},
 			"state":     schema.StringAttribute{Computed: true, Description: "pending | installing | active | error | expired (command not used within 60 minutes: taint to get a new one)."},
@@ -105,6 +114,10 @@ func (r *storageMountResource) set(m *storageMountModel, x *storageMount, withCm
 	m.StorageID = types.Int64Value(x.StorageID)
 	m.MountPoint = types.StringValue(x.MountPoint)
 	m.ReadOnly = types.BoolValue(x.ReadOnly)
+	m.Protected = types.BoolValue(x.Protected)
+	if m.AcceptVer.IsNull() || m.AcceptVer.IsUnknown() {
+		m.AcceptVer = types.BoolValue(false)
+	}
 	m.MountID = types.Int64Value(x.ID)
 	m.Name = types.StringValue(x.Name)
 	m.State = types.StringValue(x.State)
@@ -126,7 +139,13 @@ func (r *storageMountResource) Create(ctx context.Context, req resource.CreateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	body := map[string]any{"storage_service_id": m.StorageID.ValueInt64(), "bucket": m.Bucket.ValueString(), "read_only": m.ReadOnly.ValueBool()}
+	body := map[string]any{"storage_service_id": m.StorageID.ValueInt64(), "bucket": m.Bucket.ValueString()}
+	if !m.ReadOnly.IsNull() && !m.ReadOnly.IsUnknown() {
+		body["read_only"] = m.ReadOnly.ValueBool()
+	}
+	if m.AcceptVer.ValueBool() {
+		body["accept_versioning"] = true
+	}
 	if !m.MountPoint.IsNull() && !m.MountPoint.IsUnknown() && m.MountPoint.ValueString() != "" {
 		body["mount_point"] = m.MountPoint.ValueString()
 	}

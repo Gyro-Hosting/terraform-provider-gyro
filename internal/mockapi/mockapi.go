@@ -77,6 +77,7 @@ type typedState struct {
 	nextAlias int64
 	// Protected Storage service 3001 (versioning + object lock): bucket -> object_lock, default retention, old version days
 	kBuckets map[string]bool
+	kDisp    map[string]string // API 2.20.0: Protected Storage display name after a rename (real -> display)
 	kLock    map[string]map[string]any
 	kNC      map[string]int64
 }
@@ -139,7 +140,7 @@ func New() *API {
 		subkeys:        map[int64]*subkey{},
 		nextObj:        100,
 		Resellers:      map[int64]bool{1: true},
-		T: typedState{mailboxes: map[string]map[string]any{}, aliases: map[int64]map[string]any{}, buckets: map[string]bool{}, kBuckets: map[string]bool{}, kLock: map[string]map[string]any{}, kNC: map[string]int64{}, web: map[string]map[string]any{}, cors: map[string][]any{}, skeys: map[string]string{},
+		T: typedState{mailboxes: map[string]map[string]any{}, aliases: map[int64]map[string]any{}, buckets: map[string]bool{}, kBuckets: map[string]bool{}, kDisp: map[string]string{}, kLock: map[string]map[string]any{}, kNC: map[string]int64{}, web: map[string]map[string]any{}, cors: map[string][]any{}, skeys: map[string]string{},
 			app: map[int64]map[string]any{}, nextAlias: 1},
 	}
 }
@@ -966,6 +967,15 @@ func (a *API) typed(w http.ResponseWriter, m string, owner int64, seg []string, 
 		b, _ := body["bucket"].(string)
 		t.buckets[b] = true
 		ok(w, 202, map[string]any{"status": "accepted"}, nil)
+	case len(seg) == 6 && seg[2] == "3000" && seg[3] == "buckets" && seg[5] == "rename" && m == "POST": // API 2.20.0 (rename existed earlier)
+		nn, _ := body["new_name"].(string)
+		if !t.buckets[seg[4]] || nn == "" {
+			fail(w, 422, "tool_action_failed", "rename")
+			return
+		}
+		delete(t.buckets, seg[4])
+		t.buckets[nn] = true
+		ok(w, 202, map[string]any{"status": "accepted"}, nil)
 	case len(seg) == 6 && seg[3] == "buckets" && seg[5] == "website": // GyroAPI 2.6.0
 		bk := seg[4]
 		if !t.buckets[bk] {
@@ -1274,7 +1284,11 @@ func (a *API) protected(w http.ResponseWriter, m string, seg []string, body map[
 	case key == "buckets" && m == "GET":
 		items := []map[string]any{}
 		for b, lk := range t.kBuckets {
-			items = append(items, map[string]any{"name": b, "state": "active", "object_lock": lk, "path_url": "https://s3-kilit.example/" + b, "vhost_url": "https://" + b + ".s3-kilit.example"})
+			d := b
+			if x, has := t.kDisp[b]; has {
+				d = x
+			}
+			items = append(items, map[string]any{"name": d, "s3_name": b, "state": "active", "object_lock": lk, "path_url": "https://s3-kilit.example/" + b, "vhost_url": "https://" + b + ".s3-kilit.example"})
 		}
 		ok(w, 200, map[string]any{"items": items, "kilit": true, "web_code": "ab12", "versioning": true}, nil)
 	case key == "buckets" && m == "POST":
@@ -1284,8 +1298,29 @@ func (a *API) protected(w http.ResponseWriter, m string, seg []string, body map[
 		t.kNC[b+"-ab12"] = 30
 		ok(w, 202, map[string]any{"status": "accepted"}, nil)
 	case len(seg) == 5 && seg[3] == "buckets" && m == "DELETE":
-		delete(t.kBuckets, seg[4])
+		real := seg[4]
+		for r, d := range t.kDisp {
+			if d == seg[4] {
+				real = r
+			}
+		}
+		delete(t.kBuckets, real)
+		delete(t.kDisp, real)
 		ok(w, 202, map[string]any{"status": "accepted"}, nil)
+	case len(seg) == 6 && seg[3] == "buckets" && seg[5] == "rename" && m == "POST": // API 2.20.0: display name only, S3 name fixed
+		nn, _ := body["new_name"].(string)
+		real := ""
+		for b := range t.kBuckets {
+			if d, has := t.kDisp[b]; (has && d == seg[4]) || (!has && b == seg[4]) {
+				real = b
+			}
+		}
+		if real == "" || nn == "" {
+			fail(w, 422, "tool_action_failed", "rename")
+			return
+		}
+		t.kDisp[real] = strings.TrimSuffix(nn, "-ab12") + "-ab12"
+		ok(w, 202, map[string]any{"status": "accepted", "s3_name": real}, nil)
 	case len(seg) == 6 && seg[3] == "buckets" && seg[5] == "object-lock":
 		bk := seg[4]
 		lk, exists := t.kBuckets[bk]

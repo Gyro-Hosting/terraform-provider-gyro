@@ -735,6 +735,7 @@ type Bucket struct {
 	PathURL    string `json:"path_url"`
 	VhostURL   string `json:"vhost_url"`
 	ObjectLock bool   `json:"object_lock"`
+	S3Name     string `json:"s3_name"` // API 2.20.0: name for S3 clients (Protected Storage: fixed even after a rename)
 }
 
 // BucketList is GET cloud/storage/{id}/buckets with the Protected Storage fields (API 2.14.0):

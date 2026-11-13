@@ -1,3 +1,11 @@
+## 0.20.0 (2026-11-13)
+
+FEATURES:
+* `gyro_storage_bucket`: changing `name` now **renames the bucket in place** (Gyro Public API 2.20.0) instead of replacing it. Object Storage: the S3 name
+  (`full_name`) changes. Protected Storage: the display name and website address change, `full_name` (the S3 name) stays; versions and locks are never moved.
+* `gyro_server_storage_mount`: Protected Storage buckets (API 2.20.0). New `accept_versioning` (required for read/write on Protected Storage) and computed
+  `protected`; `read_only` now defaults to the API default (false on Object Storage, true on Protected Storage).
+
 ## 0.19.0 (2026-11-13)
 
 FEATURES:

@@ -57,8 +57,18 @@ func (x *mountMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if mp == "" {
 			mp = "/mnt/" + b["bucket"].(string)
 		}
+		prot := fmt.Sprint(b["storage_service_id"]) == "17999" // API 2.20.0: Protected Storage -> read-only default, rw needs accept_versioning
+		ro, has := b["read_only"].(bool)
+		if !has {
+			ro = prot
+		}
+		if prot && !ro && b["accept_versioning"] != true {
+			w.WriteHeader(422)
+			_, _ = w.Write([]byte(`{"error":{"code":"versioning_ack_required","message":"accept_versioning"}}`))
+			return
+		}
 		row := map[string]any{"id": x.next, "server_id": srv, "storage_service_id": b["storage_service_id"], "bucket": b["bucket"], "mount_point": mp,
-			"read_only": b["read_only"], "name": b["bucket"], "state": "installing", "automatic": true, "remove_command": "sudo gyro-s3mount remove " + b["bucket"].(string)}
+			"read_only": ro, "protected": prot, "name": b["bucket"], "state": "installing", "automatic": true, "remove_command": "sudo gyro-s3mount remove " + b["bucket"].(string)}
 		x.rows[x.next] = row
 		c := map[string]any{}
 		for k, v := range row {
@@ -103,6 +113,11 @@ func TestAccMockStorageMount(t *testing.T) {
 `, srv.URL+"/api/v1/client")
 	cfg := func(ro bool) string {
 		return prov + fmt.Sprintf(`
+resource "gyro_server_storage_mount" "kl" {
+  server_id          = 17547
+  storage_service_id = 17999
+  bucket             = "arsiv-ab12"
+}
 resource "gyro_server_storage_mount" "m" {
   server_id          = 17547
   storage_service_id = 17546
@@ -123,12 +138,14 @@ resource "gyro_server_storage_mount" "w" {
 			{Config: cfg(false), Check: resource.ComposeAggregateTestCheckFunc(
 				resource.TestCheckResourceAttr("gyro_server_storage_mount.m", "mount_point", "/mnt/yedekler"),
 				resource.TestCheckResourceAttr("gyro_server_storage_mount.m", "read_only", "false"),
+				resource.TestCheckResourceAttr("gyro_server_storage_mount.kl", "read_only", "true"),
+				resource.TestCheckResourceAttr("gyro_server_storage_mount.kl", "protected", "true"),
 				resource.TestCheckResourceAttr("gyro_server_storage_mount.w", "mount_point", "/var/www/assets"),
 				resource.TestCheckResourceAttr("gyro_server_storage_mount.w", "automatic", "true"),
 				resource.TestMatchResourceAttr("gyro_server_storage_mount.m", "install_command", regexp.MustCompile(`^curl -fsSL `)),
 				resource.TestMatchResourceAttr("gyro_server_storage_mount.m", "id", regexp.MustCompile(`^17547/\d+$`)),
 			)},
-			{ResourceName: "gyro_server_storage_mount.w", ImportState: true, ImportStateVerify: true, ImportStateVerifyIgnore: []string{"install_command", "state"}},
+			{ResourceName: "gyro_server_storage_mount.w", ImportState: true, ImportStateVerify: true, ImportStateVerifyIgnore: []string{"install_command", "state", "accept_versioning"}},
 			// read_only change forces a new mount (old one removed)
 			{Config: cfg(true), Check: resource.ComposeAggregateTestCheckFunc(
 				resource.TestCheckResourceAttr("gyro_server_storage_mount.m", "read_only", "true"),
@@ -138,6 +155,41 @@ resource "gyro_server_storage_mount" "w" {
 					}
 					return nil
 				},
+			)},
+		},
+	})
+}
+
+func TestAccMockStorageMountProtectedAck(t *testing.T) {
+	m := mockapi.New()
+	x := &mountMock{rows: map[int]map[string]any{}, base: m}
+	srv := httptest.NewServer(x)
+	t.Cleanup(srv.Close)
+	prov := fmt.Sprintf(`provider "gyro" {
+  endpoint = %q
+  token    = "wck_testA"
+}
+`, srv.URL+"/api/v1/client")
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{Config: prov + `
+resource "gyro_server_storage_mount" "rw" {
+  server_id          = 17547
+  storage_service_id = 17999
+  bucket             = "arsiv-ab12"
+  read_only          = false
+}`, ExpectError: regexp.MustCompile(`accept_versioning`)},
+			{Config: prov + `
+resource "gyro_server_storage_mount" "rw" {
+  server_id          = 17547
+  storage_service_id = 17999
+  bucket             = "arsiv-ab12"
+  read_only          = false
+  accept_versioning  = true
+}`, Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr("gyro_server_storage_mount.rw", "read_only", "false"),
+				resource.TestCheckResourceAttr("gyro_server_storage_mount.rw", "protected", "true"),
 			)},
 		},
 	})

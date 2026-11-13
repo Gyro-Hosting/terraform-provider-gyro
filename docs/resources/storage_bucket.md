@@ -32,7 +32,7 @@ resource "gyro_storage_bucket" "archive" {
 
 ### Required
 
-- `name` (String) Bucket name. On Protected Storage the service code is appended (see full_name).
+- `name` (String) Bucket name. On Protected Storage the service code is appended (see full_name). Changing it renames the bucket in place (API 2.20.0+: Object Storage changes the S3 name; Protected Storage changes the display name and website address while full_name, the S3 name, stays).
 - `service_id` (Number)
 
 ### Optional
@@ -41,7 +41,7 @@ resource "gyro_storage_bucket" "archive" {
 
 ### Read-Only
 
-- `full_name` (String) Real bucket name used by S3 clients and the other storage resources: name on Object Storage, <name>-<service code> on Protected Storage.
+- `full_name` (String) Real bucket name used by S3 clients and the other storage resources: name on Object Storage, <name>-<service code> on Protected Storage (on Protected Storage it keeps the original name after a rename).
 - `id` (String) The ID of this resource.
 - `path_url` (String)
 - `versioning` (Boolean) True on Protected Storage (every bucket keeps old versions).

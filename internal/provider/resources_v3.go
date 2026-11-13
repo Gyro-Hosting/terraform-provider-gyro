@@ -278,6 +278,26 @@ type bucketResource struct{ pd *providerData }
 
 func newBucketResource() resource.Resource { return &bucketResource{} }
 
+var _ resource.ResourceWithModifyPlan = (*bucketResource)(nil)
+
+// ModifyPlan: a name change is an in-place rename; the computed names/URLs are then known only after apply.
+func (r *bucketResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+	var plan, state bucketModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() || plan.Name.Equal(state.Name) || plan.Name.IsUnknown() {
+		return
+	}
+	plan.ID = types.StringUnknown()
+	plan.FullName = types.StringUnknown()
+	plan.PathURL = types.StringUnknown()
+	plan.VhostURL = types.StringUnknown()
+	resp.Diagnostics.Append(resp.Plan.Set(ctx, &plan)...)
+}
+
 type bucketModel struct {
 	ID         types.String `tfsdk:"id"`
 	ServiceID  types.Int64  `tfsdk:"service_id"`
@@ -300,14 +320,16 @@ func (r *bucketResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 		Attributes: map[string]schema.Attribute{
 			"id":         schema.StringAttribute{Computed: true, PlanModifiers: keep},
 			"service_id": schema.Int64Attribute{Required: true, PlanModifiers: replaceI},
-			"name": schema.StringAttribute{Required: true, PlanModifiers: replaceS,
-				Description: "Bucket name. On Protected Storage the service code is appended (see full_name)."},
+			"name": schema.StringAttribute{Required: true,
+				Description: "Bucket name. On Protected Storage the service code is appended (see full_name). Changing it renames the bucket in place " +
+					"(API 2.20.0+: Object Storage changes the S3 name; Protected Storage changes the display name and website address while full_name, the S3 name, stays)."},
 			"object_lock": schema.BoolAttribute{Optional: true, Computed: true,
 				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown(), boolplanmodifier.RequiresReplaceIfConfigured()},
 				Description: "Protected Storage only: create the bucket with object lock (WORM). Needs a free locked-bucket right (Object Lock add-on). " +
 					"Can only be chosen at creation and never turned off; changing it replaces the bucket. A standard Object Storage service refuses true (feature_not_available)."},
 			"full_name": schema.StringAttribute{Computed: true, PlanModifiers: keep,
-				Description: "Real bucket name used by S3 clients and the other storage resources: name on Object Storage, <name>-<service code> on Protected Storage."},
+				Description: "Real bucket name used by S3 clients and the other storage resources: name on Object Storage, <name>-<service code> on Protected Storage " +
+					"(on Protected Storage it keeps the original name after a rename)."},
 			"versioning": schema.BoolAttribute{Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 				Description: "True on Protected Storage (every bucket keeps old versions)."},
 			"path_url":  schema.StringAttribute{Computed: true, PlanModifiers: keep},
@@ -327,7 +349,8 @@ func (r *bucketResource) find(ctx context.Context, m *bucketModel) (bool, error)
 		return false, err
 	}
 	want := map[string]bool{}
-	if !m.FullName.IsNull() && !m.FullName.IsUnknown() && m.FullName.ValueString() != "" {
+	byFull := !m.FullName.IsNull() && !m.FullName.IsUnknown() && m.FullName.ValueString() != ""
+	if byFull {
 		want[m.FullName.ValueString()] = true
 	} else {
 		want[m.Name.ValueString()] = true
@@ -336,9 +359,14 @@ func (r *bucketResource) find(ctx context.Context, m *bucketModel) (bool, error)
 		}
 	}
 	for _, b := range bl.Items {
-		if want[b.Name] && b.State != "deleting" && b.State != "purged" && b.State != "deleted" {
-			m.ID = types.StringValue(fmt.Sprintf("%d/%s", sid(m.ServiceID), b.Name))
-			m.FullName = types.StringValue(b.Name)
+		s3n := b.S3Name
+		if s3n == "" {
+			s3n = b.Name
+		}
+		hit := want[b.Name] || (byFull && want[s3n])
+		if hit && b.State != "deleting" && b.State != "purged" && b.State != "deleted" {
+			m.ID = types.StringValue(fmt.Sprintf("%d/%s", sid(m.ServiceID), s3n))
+			m.FullName = types.StringValue(s3n)
 			m.ObjectLock = types.BoolValue(b.ObjectLock)
 			m.Versioning = types.BoolValue(bl.Protected || bl.Versioned)
 			m.PathURL = types.StringValue(b.PathURL)
@@ -383,8 +411,38 @@ func (r *bucketResource) Read(ctx context.Context, req resource.ReadRequest, res
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
 
+// Update: name change = in-place rename (API 2.20.0). service_id / object_lock still force replacement.
 func (r *bucketResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError("Update not supported", "All gyro_storage_bucket arguments force replacement.")
+	var plan, state bucketModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	cur := state.FullName.ValueString()
+	if bl, err := r.pd.c.BucketList(ctx, sid(state.ServiceID)); err == nil {
+		for _, b := range bl.Items {
+			if b.S3Name == cur || b.Name == cur {
+				cur = b.Name // the display name is the path parameter
+				break
+			}
+		}
+	}
+	if plan.Name.ValueString() != state.Name.ValueString() {
+		_, err := r.pd.c.TypedWrite(ctx, http.MethodPost, fmt.Sprintf("cloud/storage/%d/buckets/%s/rename", sid(state.ServiceID), url.PathEscape(cur)),
+			map[string]any{"new_name": plan.Name.ValueString(), "confirm": true})
+		if err != nil {
+			resp.Diagnostics.AddError("Renaming bucket failed", err.Error())
+			return
+		}
+	}
+	plan.FullName = types.StringNull()
+	ok, err := r.find(ctx, &plan)
+	if err != nil || !ok {
+		resp.Diagnostics.AddError("Bucket not found after rename", fmt.Sprint(err))
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *bucketResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -393,6 +451,15 @@ func (r *bucketResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	name := m.Name.ValueString()
 	if !m.FullName.IsNull() && m.FullName.ValueString() != "" {
 		name = m.FullName.ValueString()
+		// API 2.20.0: a renamed Protected Storage bucket is addressed (and delete-confirmed) by its display name
+		if bl, err := r.pd.c.BucketList(ctx, sid(m.ServiceID)); err == nil {
+			for _, b := range bl.Items {
+				if b.S3Name == name && b.Name != "" {
+					name = b.Name
+					break
+				}
+			}
+		}
 	}
 	_, err := r.pd.c.TypedWrite(ctx, http.MethodDelete, fmt.Sprintf("cloud/storage/%d/buckets/%s", sid(m.ServiceID), url.PathEscape(name)), map[string]any{"confirm": true})
 	if err != nil && !client.IsNotFound(err) {

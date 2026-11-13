@@ -1,3 +1,10 @@
+## 0.17.0 (2026-11-13)
+
+FEATURES:
+* **New resource** `gyro_server_storage_mount` (Gyro Public API 2.17.5 `/cloud/servers/{id}/storage-mounts`): mount a Gyro Object Storage
+  bucket on a server as a folder (read-only or read/write, one narrow access key per mount). Applied automatically on Gyro Cloud Istanbul
+  (tr-ist-1) servers; elsewhere `install_command` (sensitive, single use, 60 minutes). Import `<server_id>/<mount_id>`.
+
 ## 0.16.2 (2026-11-13)
 
 FEATURES:

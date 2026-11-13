@@ -1,3 +1,10 @@
+## 0.23.0 (2026-11-13)
+
+FEATURES:
+* **New resource** `gyro_container_pipeline` (Gyro Public API 2.23.0, `/cloud/containers/{id}/pipelines`): Gyro Pipeline for Gyro Containers (ECS):
+  connects a GitHub, GitLab, Gitea or https git repository; pushes / tags build the Dockerfile in an isolated build environment and roll the target
+  services out with automatic rollback. Exposes `webhook_url` and `webhook_secret`; `token` and build `secrets` are write-only. Import `<service_id>/<pipeline_id>`.
+
 ## 0.22.0 (2026-11-13)
 
 FEATURES:

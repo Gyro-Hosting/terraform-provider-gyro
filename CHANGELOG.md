@@ -1,3 +1,11 @@
+## 0.22.0 (2026-11-13)
+
+FEATURES:
+* **New resource** `gyro_container_image` (Gyro Public API 2.22.0, `POST/GET /cloud/containers/{id}/registry/imports`): copies an image from
+  Docker Hub, GitHub, Quay or any https registry into a Gyro Containers environment's private registry without `docker push` (linux/amd64),
+  waits for the copy and exposes `image` for `gyro_container_service`. Optional `username`/`password` are used only for the copy and never
+  stored by Gyro. Destroy deletes the tag (refused while a service uses it).
+
 ## 0.21.0 (2026-11-13)
 
 FEATURES:

@@ -1,3 +1,10 @@
+## 0.19.0 (2026-11-13)
+
+FEATURES:
+* **New resource** `gyro_server_disk` (Gyro Public API 2.19.0 `/cloud/servers/{id}/disks`): additional disks for Gyro Cloud Istanbul
+  (tr-ist-1) servers, class `ssd` (fast) or `hdd` (large storage), billed per GB hourly from the prepaid balance. Raising `size_gb`
+  grows the disk in place; shrinking is refused at plan time; changing `class` replaces the disk. Import `<server_id>/<disk_id>`.
+
 ## 0.18.0 (2026-11-13)
 
 FEATURES:

@@ -21,3 +21,26 @@ output "webhook_secret" {
   value     = gyro_container_pipeline.web.webhook_secret
   sensitive = true
 }
+
+# Private repository over SSH: Gyro creates a read-only deploy key (the private key never leaves Gyro).
+# GitHub / GitLab / Bitbucket host keys are pinned; for your own git server set ssh_host_fingerprint.
+resource "gyro_container_pipeline" "api" {
+  service_id = 12345
+  name       = "api"
+  repo       = "git@github.com:gyro-ornek/api.git"
+  deploy_key = true
+  image      = "api"
+  targets    = ["api"]
+}
+
+# Add this to the repository: Settings > Deploy keys (read only)
+output "deploy_key" { value = gyro_container_pipeline.api.deploy_key_public }
+
+# Archive builds only (no repository): upload with the API (POST .../pipelines/{id}/uploads) and run with the upload id.
+resource "gyro_container_pipeline" "site" {
+  service_id   = 12345
+  name         = "site"
+  git_provider = "archive"
+  image        = "site"
+  targets      = ["web"]
+}

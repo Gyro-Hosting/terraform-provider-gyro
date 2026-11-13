@@ -20,7 +20,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-// API 2.23.0 Gyro Pipeline: /cloud/containers/{id}/pipelines (typed tool routes, GyroKapsayici "ecs-pipeline").
+// API 2.23.0 Gyro Pipeline (2.24.0: SSH deploy key / host key, provider "archive"): /cloud/containers/{id}/pipelines (typed tool routes, GyroKapsayici "ecs-pipeline").
 // A pipeline connects a git repository to a container environment: push / tag webhook -> Dockerfile build in an isolated
 // build environment -> <registry>/<code>/<image>:<sha7> -> rolling deploy of the target services with automatic rollback.
 
@@ -62,9 +62,30 @@ type containerPipelineModel struct {
 	WebhookURL    types.String `tfsdk:"webhook_url"`
 	WebhookSecret types.String `tfsdk:"webhook_secret"`
 	RegistryImage types.String `tfsdk:"registry_image"`
+	// 2.24.0 (Faz 2): SSH deploy key / host key
+	DeployKey    types.Bool   `tfsdk:"deploy_key"`
+	DeployKeyPub types.String `tfsdk:"deploy_key_public"`
+	DeployKeyFP  types.String `tfsdk:"deploy_key_fingerprint"`
+	HostKeyFP    types.String `tfsdk:"ssh_host_fingerprint"`
+}
+
+type pipelineSSHView struct {
+	Host     string `json:"host"`
+	Pinned   bool   `json:"pinned"`
+	Trusted  bool   `json:"host_key_trusted"`
+	HostKeys []struct {
+		Type        string `json:"type"`
+		Fingerprint string `json:"fingerprint"`
+	} `json:"host_keys"`
+	DeployKey *struct {
+		PublicKey   string `json:"public_key"`
+		Fingerprint string `json:"fingerprint"`
+	} `json:"deploy_key"`
 }
 
 type pipelineView struct {
+	Auth          string            `json:"auth"`
+	SSH           *pipelineSSHView  `json:"ssh"`
 	ID            string            `json:"id"`
 	Name          string            `json:"name"`
 	Provider      string            `json:"provider"`
@@ -114,8 +135,9 @@ func (r *containerPipelineResource) Schema(_ context.Context, _ resource.SchemaR
 			"pipeline_id": schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "Pipeline id (p + 8 characters)."},
 			"name":        schema.StringAttribute{Required: true, Description: "Display name (1-48)."},
 			"git_provider": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("github"),
-				Description: "github, gitlab, gitea or git (any https git server; gyro-pipeline.yml is not read for git)."},
-			"repo":     schema.StringAttribute{Required: true, Description: "https clone URL without credentials, e.g. https://github.com/gyro-ornek/uygulama."},
+				Description: "github, gitlab, gitea, git (any git server; gyro-pipeline.yml is not read for git) or archive (no repository: builds only from uploaded archives, API POST .../uploads)."},
+			"repo": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""),
+				Description: "https clone URL without credentials (https://github.com/gyro-ornek/uygulama) or SSH address (git@github.com:gyro-ornek/uygulama.git, ssh://git@git.example.com:2222/team/app.git; needs deploy_key = true). Empty for git_provider = archive."},
 			"token":    schema.StringAttribute{Optional: true, Sensitive: true, Description: "Read-only access token for a private repository (stored encrypted by Gyro, never returned)."},
 			"git_user": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""), Description: "User name for the token (default per provider)."},
 			"branch":   schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("main"), Description: "Branches whose pushes build (comma separated globs, empty = none)."},
@@ -144,6 +166,12 @@ func (r *containerPipelineResource) Schema(_ context.Context, _ resource.SchemaR
 			"webhook_url":    schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "Webhook address for the repository."},
 			"webhook_secret": schema.StringAttribute{Computed: true, Sensitive: true, PlanModifiers: keep, Description: "Webhook secret (GitHub Secret / GitLab Secret token / Gitea secret)."},
 			"registry_image": schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "Image repository the pipeline pushes to (<registry>/<code>/<image>)."},
+			"deploy_key": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false),
+				Description: "SSH repositories: Gyro creates an ed25519 deploy key (the private key never leaves Gyro). Add deploy_key_public to the repository as a read-only deploy key. Setting it back to false deletes the key."},
+			"deploy_key_public":      schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "Public key (authorized_keys line) to add to the repository."},
+			"deploy_key_fingerprint": schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "SHA256 fingerprint of the deploy key."},
+			"ssh_host_fingerprint": schema.StringAttribute{Optional: true,
+				Description: "SSH servers other than GitHub / GitLab / Bitbucket (whose keys are pinned): the server's SHA256 host key fingerprint you verified (trust on first use). Builds stop if the server key changes."},
 		},
 	}
 }
@@ -228,6 +256,20 @@ func (r *containerPipelineResource) apply(ctx context.Context, m *containerPipel
 	sort.Strings(n)
 	m.Notify = lv(n)
 	m.WebhookURL, m.RegistryImage = types.StringValue(v.WebhookURL), types.StringValue(v.RegistryImage)
+	m.DeployKeyPub, m.DeployKeyFP = types.StringValue(""), types.StringValue("")
+	if v.SSH != nil && v.SSH.DeployKey != nil {
+		m.DeployKeyPub, m.DeployKeyFP = types.StringValue(v.SSH.DeployKey.PublicKey), types.StringValue(v.SSH.DeployKey.Fingerprint)
+	}
+	if m.DeployKey.IsNull() || m.DeployKey.IsUnknown() || readSecrets {
+		m.DeployKey = types.BoolValue(v.SSH != nil && v.SSH.DeployKey != nil)
+	}
+	if readSecrets && !m.HostKeyFP.IsNull() && v.SSH != nil && !v.SSH.Pinned {
+		fp := ""
+		if len(v.SSH.HostKeys) > 0 {
+			fp = v.SSH.HostKeys[0].Fingerprint
+		}
+		m.HostKeyFP = types.StringValue(fp)
+	}
 	if v.WebhookSecret != "" {
 		m.WebhookSecret = types.StringValue(v.WebhookSecret)
 	} else if m.WebhookSecret.IsUnknown() {
@@ -272,6 +314,49 @@ func (r *containerPipelineResource) syncSecrets(ctx context.Context, sid int64, 
 	return nil
 }
 
+// sshSync: deploy key and host key confirmation (API 2.24.0), then the fresh view.
+func (r *containerPipelineResource) sshSync(ctx context.Context, sid int64, pid string, m *containerPipelineModel, v pipelineView) (pipelineView, error) {
+	base := fmt.Sprintf("cloud/containers/%d/pipelines/%s", sid, pid)
+	has := v.SSH != nil && v.SSH.DeployKey != nil
+	changed := false
+	switch want := m.DeployKey.ValueBool(); {
+	case want && !has:
+		if v.SSH == nil {
+			return v, fmt.Errorf("deploy_key needs an SSH repository address (git@host:org/repo.git)")
+		}
+		if _, err := r.pd.c.Do(ctx, "PUT", base+"/deploy-key", nil, map[string]any{}, "", nil); err != nil {
+			return v, err
+		}
+		changed = true
+	case !want && has:
+		if _, err := r.pd.c.Do(ctx, "DELETE", base+"/deploy-key", nil, map[string]any{"confirm": true}, "", nil); err != nil && !client.IsNotFound(err) {
+			return v, err
+		}
+		changed = true
+	}
+	if fp := m.HostKeyFP.ValueString(); fp != "" && v.SSH != nil && !v.SSH.Pinned {
+		cur := ""
+		if len(v.SSH.HostKeys) > 0 {
+			cur = v.SSH.HostKeys[0].Fingerprint
+		}
+		if cur != fp {
+			if _, err := r.pd.c.Do(ctx, "PUT", base+"/host-key", nil, map[string]any{"fingerprint": fp}, "", nil); err != nil {
+				return v, err
+			}
+			changed = true
+		}
+	}
+	if !changed {
+		return v, nil
+	}
+	var nv pipelineView
+	if _, err := r.pd.c.Do(ctx, "GET", base, nil, nil, "", &nv); err != nil {
+		return v, err
+	}
+	nv.WebhookSecret = v.WebhookSecret
+	return nv, nil
+}
+
 func (r *containerPipelineResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var m containerPipelineModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &m)...)
@@ -292,6 +377,11 @@ func (r *containerPipelineResource) Create(ctx context.Context, req resource.Cre
 	}
 	if err := r.syncSecrets(ctx, sid, out.Pipeline.ID, plMap(ctx, m.Secrets), nil); err != nil {
 		resp.Diagnostics.AddError("Setting the build secrets failed", err.Error())
+	}
+	if nv, err := r.sshSync(ctx, sid, out.Pipeline.ID, &m, out.Pipeline); err != nil {
+		resp.Diagnostics.AddError("SSH deploy key / host key failed", err.Error())
+	} else {
+		out.Pipeline = nv
 	}
 	r.apply(ctx, &m, out.Pipeline, false)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
@@ -350,6 +440,11 @@ func (r *containerPipelineResource) Update(ctx context.Context, req resource.Upd
 		resp.Diagnostics.AddError("Updating the build secrets failed", err.Error())
 	}
 	m.WebhookSecret = st.WebhookSecret
+	if nv, err := r.sshSync(ctx, sid, pid, &m, out.Pipeline); err != nil {
+		resp.Diagnostics.AddError("SSH deploy key / host key failed", err.Error())
+	} else {
+		out.Pipeline = nv
+	}
 	r.apply(ctx, &m, out.Pipeline, false)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }

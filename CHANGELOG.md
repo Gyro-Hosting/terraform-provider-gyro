@@ -1,3 +1,12 @@
+## 0.24.0 (2026-11-13)
+
+FEATURES:
+* `gyro_container_pipeline` (Gyro Public API 2.24.0): private repositories over SSH - `repo` accepts `git@host:org/repo.git` /
+  `ssh://user@host[:port]/path`; `deploy_key = true` makes Gyro create a read-only ed25519 deploy key (exposes `deploy_key_public` and
+  `deploy_key_fingerprint`; the private key never leaves Gyro, `false` deletes it); `ssh_host_fingerprint` confirms the host key of servers
+  other than GitHub / GitLab / Bitbucket (whose keys are pinned). `git_provider = "archive"` creates a pipeline without a repository that
+  builds uploaded .tar.gz / .zip archives (API `POST .../uploads`). `repo` is now optional (empty for archive pipelines).
+
 ## 0.23.0 (2026-11-13)
 
 FEATURES:

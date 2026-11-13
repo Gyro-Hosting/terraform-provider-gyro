@@ -343,6 +343,8 @@ type serviceModel struct {
 	Host        types.String `tfsdk:"host"`
 	IP          types.String `tfsdk:"ip"`
 	CustomerID  types.Int64  `tfsdk:"customer_id"`
+	Nickname    types.String    `tfsdk:"nickname"`
+	Tags        []labelTagModel `tfsdk:"tags"`
 }
 
 type servicesModel struct {
@@ -363,6 +365,10 @@ func (d *servicesDS) Schema(_ context.Context, _ datasource.SchemaRequest, resp 
 				"id": schema.Int64Attribute{Computed: true}, "product_line": schema.StringAttribute{Computed: true}, "name": schema.StringAttribute{Computed: true},
 				"status": schema.StringAttribute{Computed: true}, "host": schema.StringAttribute{Computed: true}, "ip": schema.StringAttribute{Computed: true},
 				"customer_id": schema.Int64Attribute{Computed: true},
+				"nickname":    schema.StringAttribute{Computed: true, Description: "Customer nickname of the service (gyro_service_label), null when none."},
+				"tags": schema.ListNestedAttribute{Computed: true, Description: "Colour tags of the service (gyro_service_label).", NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
+					"name": schema.StringAttribute{Computed: true}, "color": schema.StringAttribute{Computed: true},
+				}}},
 			}}},
 		},
 	}
@@ -382,8 +388,16 @@ func (d *servicesDS) Read(ctx context.Context, req datasource.ReadRequest, resp 
 	}
 	m.Services = []serviceModel{}
 	for _, s := range list {
+		tags := []labelTagModel{}
+		for _, t := range s.Tags {
+			tags = append(tags, labelTagModel{Name: types.StringValue(t.Name), Color: types.StringValue(t.Color)})
+		}
+		nick := types.StringNull()
+		if s.Nickname != nil && *s.Nickname != "" {
+			nick = types.StringValue(*s.Nickname)
+		}
 		m.Services = append(m.Services, serviceModel{types.Int64Value(s.ID), types.StringValue(s.ProductLine), types.StringValue(s.Name), types.StringValue(s.Status),
-			types.StringPointerValue(s.Host), types.StringPointerValue(s.IP), types.Int64PointerValue(s.CustomerID)})
+			types.StringPointerValue(s.Host), types.StringPointerValue(s.IP), types.Int64PointerValue(s.CustomerID), nick, tags})
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }

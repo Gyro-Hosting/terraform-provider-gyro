@@ -39,5 +39,15 @@ Read-Only:
 - `id` (Number)
 - `ip` (String)
 - `name` (String)
+- `nickname` (String) Customer nickname of the service (gyro_service_label), null when none.
 - `product_line` (String)
 - `status` (String)
+- `tags` (Attributes List) Colour tags of the service (gyro_service_label). (see [below for nested schema](#nestedatt--services--tags))
+
+<a id="nestedatt--services--tags"></a>
+### Nested Schema for `services.tags`
+
+Read-Only:
+
+- `color` (String)
+- `name` (String)

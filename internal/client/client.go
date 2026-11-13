@@ -573,20 +573,22 @@ func (c *Client) WaitReady(ctx context.Context, id int64, want string, interval 
 /* ------------------------------------------------------------------ v2 */
 
 type Service struct {
-	ID          int64   `json:"id"`
-	Type        string  `json:"type"`
-	ProductLine string  `json:"product_line"`
-	Module      *string `json:"module"`
-	Name        string  `json:"name"`
-	Status      string  `json:"status"`
-	ProductID   int64   `json:"product_id"`
-	Host        *string `json:"host"`
-	IP          *string `json:"ip"`
-	Cycle       string  `json:"cycle"`
-	Price       Money   `json:"price"`
-	AutoRenew   bool    `json:"auto_renew"`
-	DueDate     *string `json:"due_date"`
-	CustomerID  *int64  `json:"customer_id"`
+	ID          int64      `json:"id"`
+	Type        string     `json:"type"`
+	ProductLine string     `json:"product_line"`
+	Module      *string    `json:"module"`
+	Name        string     `json:"name"`
+	Status      string     `json:"status"`
+	ProductID   int64      `json:"product_id"`
+	Host        *string    `json:"host"`
+	IP          *string    `json:"ip"`
+	Cycle       string     `json:"cycle"`
+	Price       Money      `json:"price"`
+	AutoRenew   bool       `json:"auto_renew"`
+	DueDate     *string    `json:"due_date"`
+	CustomerID  *int64     `json:"customer_id"`
+	Nickname    *string    `json:"nickname"`
+	Tags        []LabelTag `json:"tags"`
 }
 
 type Webhook struct {

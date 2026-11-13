@@ -1,3 +1,11 @@
+## 0.21.0 (2026-11-13)
+
+FEATURES:
+* **New resource** `gyro_service_label` (Gyro Public API `GET/PUT /cloud/services/{id}/label`): nickname (1-60 characters) and up to 10
+  colour tags for any existing service (cloud server, container environment, VDS, storage, DNS, mail, ...). The nickname is the service
+  title in the client area; the product name and service number stay below it. Destroy clears the label. Import by service id. Closes #1.
+* `gyro_services` data source: new computed `nickname` and `tags` (`name`, `color`) per service.
+
 ## 0.20.1 (2026-11-13)
 
 DOCUMENTATION:

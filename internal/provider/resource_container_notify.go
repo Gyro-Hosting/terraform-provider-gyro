@@ -22,7 +22,7 @@ import (
 
 var _ resource.ResourceWithImportState = (*containerNotifyResource)(nil)
 
-var containerEvents = []string{"down", "crashloop", "replicas_low", "scale_max", "capacity"}
+var containerEvents = []string{"down", "crashloop", "replicas_low", "scale_max", "capacity", "egress"}
 
 type containerNotifyResource struct{ pd *providerData }
 
@@ -48,7 +48,7 @@ func (r *containerNotifyResource) Metadata(_ context.Context, req resource.Metad
 func (r *containerNotifyResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Alert channels of a Gyro Containers (ECS) environment: e-mail, SMS, Telegram (chat id from the platform bot), signed webhook. " +
-			"Events: down, crashloop, replicas_low (per-service threshold: gyro_container_service.notification.min_ready), scale_max, capacity. " +
+			"Events: down, crashloop, replicas_low (per-service threshold: gyro_container_service.notification.min_ready), scale_max, capacity, egress (egress IPs changed). " +
 			"An event is announced after ~2 minutes, at most once per `cooldown` minutes per service and event, with a resolved message. Destroy = defaults (e-mail on, others off).",
 		Attributes: map[string]schema.Attribute{
 			"id":          schema.StringAttribute{Computed: true, PlanModifiers: keep},
@@ -60,7 +60,7 @@ func (r *containerNotifyResource) Schema(_ context.Context, _ resource.SchemaReq
 			"webhook_secret": schema.StringAttribute{Computed: true, Sensitive: true, PlanModifiers: keep,
 				Description: "Signing secret: X-Gyro-Signature = sha256=HMAC(secret, X-Gyro-Timestamp + \".\" + body)."},
 			"events": schema.SetAttribute{ElementType: types.StringType, Optional: true, Computed: true,
-				Description: "Enabled events (default all): down, crashloop, replicas_low, scale_max, capacity."},
+				Description: "Enabled events (default all): down, crashloop, replicas_low, scale_max, capacity, egress (egress IPs of the environment changed)."},
 			"cooldown": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(30), Description: "Minutes between two announcements of the same service + event (5-1440)."},
 			"resolved": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true), Description: "Send a resolved message."},
 		},

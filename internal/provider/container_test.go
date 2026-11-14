@@ -88,6 +88,12 @@ func (m *containerMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if seg[0] == "7" && len(seg) == 1 && r.Method == "GET" { // API 2.27.0 environment detail
+		ok(map[string]any{"code": "abcd12", "namespace": "t-canli-7", "mode": "dedicated", "host_suffix": "-abcd12.gyroapp.net", "suspended": false,
+			"cluster_dns": map[string]any{"service_domain": "t-canli-7.svc.cluster.local"}, "egress_ips": []string{"192.0.2.10", "192.0.2.68"},
+			"egress_note": "IPs may change", "egress": map[string]any{"hash": "aa11", "build_ips": []string{"192.0.2.112"}}, "ingress_ips": []string{"192.0.2.121"}})
+		return
+	}
 	if seg[0] != "7" || len(seg) < 2 || seg[1] != "services" {
 		fail(404, "service_not_found")
 		return
@@ -106,6 +112,10 @@ func (m *containerMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		out := map[string]any{"service_id": 7, "name": n, "spec": sp, "revision": m.rev[n], "state": "running", "domains": ds, "secret_keys": keys}
 		if sp["public"] == true {
 			out["url"], out["host"] = "https://"+n+"-abcd12.gyroapp.net", n+"-abcd12.gyroapp.net"
+		}
+		out["namespace"] = "t-canli-7"
+		if p, _ := sp["port"].(float64); p > 0 {
+			out["internal"] = map[string]any{"address": n + ".t-canli-7.svc.cluster.local:80", "short": n, "port": 80}
 		}
 		return out
 	}
@@ -226,6 +236,8 @@ resource "gyro_container_service" "web" {
 				resource.TestCheckResourceAttr("gyro_container_service.web", "host", "web-abcd12.gyroapp.net"),
 				resource.TestCheckResourceAttr("gyro_container_service.web", "domains.#", "1"),
 				resource.TestCheckResourceAttr("gyro_container_service.web", "secrets.DB_PASSWORD", "s1"),
+				resource.TestCheckResourceAttr("gyro_container_service.web", "internal_address", "web.t-canli-7.svc.cluster.local:80"),
+				resource.TestCheckResourceAttr("gyro_container_service.web", "namespace", "t-canli-7"),
 			)},
 			{Config: cfg("ghcr.io/acme/web:1", 2, "s1", `"www.example.com"`), PlanOnly: true},
 			{Config: cfg("ghcr.io/acme/web:2", 3, "s2", `"app.example.com"`), Check: resource.ComposeAggregateTestCheckFunc(
@@ -319,4 +331,21 @@ resource "gyro_container_notifications" "n" {
 	if !sent {
 		t.Fatal("notifications were never written")
 	}
+}
+
+func TestAccMockContainerEnvironmentDataSource(t *testing.T) {
+	srv := httptest.NewServer(newContainerMock())
+	t.Cleanup(srv.Close)
+	prov := fmt.Sprintf("provider \"gyro\" {\n  endpoint = %q\n  token = \"wck_testA\"\n}\n", srv.URL+"/api/v1/client")
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{{Config: prov + `data "gyro_container_environment" "e" { service_id = 7 }`, Check: resource.ComposeAggregateTestCheckFunc(
+			resource.TestCheckResourceAttr("data.gyro_container_environment.e", "namespace", "t-canli-7"),
+			resource.TestCheckResourceAttr("data.gyro_container_environment.e", "service_domain", "t-canli-7.svc.cluster.local"),
+			resource.TestCheckResourceAttr("data.gyro_container_environment.e", "egress_ips.#", "2"),
+			resource.TestCheckResourceAttr("data.gyro_container_environment.e", "egress_ips.1", "192.0.2.68"),
+			resource.TestCheckResourceAttr("data.gyro_container_environment.e", "build_egress_ips.0", "192.0.2.112"),
+			resource.TestCheckResourceAttr("data.gyro_container_environment.e", "mode", "dedicated"),
+		)}},
+	})
 }

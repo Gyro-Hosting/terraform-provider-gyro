@@ -75,6 +75,10 @@ type containerView struct {
 	Host       string            `json:"host"`
 	Domains    []containerDomain `json:"domains"`
 	SecretKeys []string          `json:"secret_keys"`
+	Namespace  string            `json:"namespace"`
+	Internal   *struct {
+		Address string `json:"address"`
+	} `json:"internal"`
 }
 
 func containerPath(sid int64, name string) string {
@@ -111,6 +115,8 @@ type containerServiceModel struct {
 	URL          types.String           `tfsdk:"url"`
 	Host         types.String           `tfsdk:"host"`
 	Revision     types.Int64            `tfsdk:"revision"`
+	Internal     types.String           `tfsdk:"internal_address"`
+	Namespace    types.String           `tfsdk:"namespace"`
 	State        types.String           `tfsdk:"state"`
 }
 
@@ -158,7 +164,10 @@ func (r *containerServiceResource) Schema(_ context.Context, _ resource.SchemaRe
 			"url":      schema.StringAttribute{Computed: true, Description: "Public URL (public services)."},
 			"host":     schema.StringAttribute{Computed: true, Description: "Public host name; CNAME target for your domains."},
 			"revision": schema.Int64Attribute{Computed: true, Description: "Current revision number."},
-			"state":    schema.StringAttribute{Computed: true, Description: "running, deploying, failing, pending, stopped or suspended (at the last read)."},
+			"internal_address": schema.StringAttribute{Computed: true, Description: "In-cluster address <name>.<namespace>.svc.cluster.local:80 (services with a port; " +
+				"other services of the same environment can also use <name>:80). Empty when port = 0."},
+			"namespace": schema.StringAttribute{Computed: true, Description: "Kubernetes namespace of the environment."},
+			"state":     schema.StringAttribute{Computed: true, Description: "running, deploying, failing, pending, stopped or suspended (at the last read)."},
 		},
 	}
 }
@@ -288,6 +297,10 @@ func (r *containerServiceResource) apply(ctx context.Context, m *containerServic
 	}
 	m.URL, m.Host = types.StringValue(v.URL), types.StringValue(v.Host)
 	m.Revision, m.State = types.Int64Value(v.Revision), types.StringValue(v.State)
+	m.Internal, m.Namespace = types.StringValue(""), types.StringValue(v.Namespace)
+	if v.Internal != nil {
+		m.Internal = types.StringValue(v.Internal.Address)
+	}
 }
 
 func nonNil(s []string) []string {

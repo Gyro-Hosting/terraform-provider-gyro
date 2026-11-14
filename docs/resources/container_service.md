@@ -83,6 +83,8 @@ output "web_url" {
 
 - `host` (String) Public host name; CNAME target for your domains.
 - `id` (String) <service_id>/<name>
+- `internal_address` (String) In-cluster address <name>.<namespace>.svc.cluster.local:80 (services with a port; other services of the same environment can also use <name>:80). Empty when port = 0.
+- `namespace` (String) Kubernetes namespace of the environment.
 - `revision` (Number) Current revision number.
 - `state` (String) running, deploying, failing, pending, stopped or suspended (at the last read).
 - `url` (String) Public URL (public services).

@@ -3,12 +3,12 @@
 page_title: "gyro_container_notifications Resource - gyro"
 subcategory: ""
 description: |-
-  Alert channels of a Gyro Containers (ECS) environment: e-mail, SMS, Telegram (chat id from the platform bot), signed webhook. Events: down, crashloop, replicas_low (per-service threshold: gyro_container_service.notification.min_ready), scale_max, capacity. An event is announced after ~2 minutes, at most once per cooldown minutes per service and event, with a resolved message. Destroy = defaults (e-mail on, others off).
+  Alert channels of a Gyro Containers (ECS) environment: e-mail, SMS, Telegram (chat id from the platform bot), signed webhook. Events: down, crashloop, replicas_low (per-service threshold: gyro_container_service.notification.min_ready), scale_max, capacity, egress (egress IPs changed). An event is announced after ~2 minutes, at most once per cooldown minutes per service and event, with a resolved message. Destroy = defaults (e-mail on, others off).
 ---
 
 # gyro_container_notifications (Resource)
 
-Alert channels of a Gyro Containers (ECS) environment: e-mail, SMS, Telegram (chat id from the platform bot), signed webhook. Events: down, crashloop, replicas_low (per-service threshold: gyro_container_service.notification.min_ready), scale_max, capacity. An event is announced after ~2 minutes, at most once per `cooldown` minutes per service and event, with a resolved message. Destroy = defaults (e-mail on, others off).
+Alert channels of a Gyro Containers (ECS) environment: e-mail, SMS, Telegram (chat id from the platform bot), signed webhook. Events: down, crashloop, replicas_low (per-service threshold: gyro_container_service.notification.min_ready), scale_max, capacity, egress (egress IPs changed). An event is announced after ~2 minutes, at most once per `cooldown` minutes per service and event, with a resolved message. Destroy = defaults (e-mail on, others off).
 
 ## Example Usage
 
@@ -42,7 +42,7 @@ output "webhook_secret" {
 
 - `cooldown` (Number) Minutes between two announcements of the same service + event (5-1440).
 - `email` (Boolean) Account e-mail.
-- `events` (Set of String) Enabled events (default all): down, crashloop, replicas_low, scale_max, capacity.
+- `events` (Set of String) Enabled events (default all): down, crashloop, replicas_low, scale_max, capacity, egress (egress IPs of the environment changed).
 - `resolved` (Boolean) Send a resolved message.
 - `sms` (Boolean) Account phone (SMS).
 - `telegram` (String) Telegram chat id (send /start to the platform bot).

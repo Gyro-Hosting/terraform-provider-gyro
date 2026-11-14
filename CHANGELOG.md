@@ -1,3 +1,14 @@
+## 0.27.0 (2026-11-14)
+
+FEATURES:
+* **New data source `gyro_container_environment`** (Gyro Public API 2.27.0): Kubernetes `namespace`, in-cluster `service_domain`, the current
+  `egress_ips` (the IPv4 addresses your containers reach the internet from - for IP allow lists of external services; dedicated = own nodes +
+  the shared pool used during updates, serverless = shared pool), `egress_hash`, `build_egress_ips` (Gyro Pipeline) and `ingress_ips`.
+
+ENHANCEMENTS:
+* `gyro_container_service`: new read-only `internal_address` (`<name>.<namespace>.svc.cluster.local:80`) and `namespace`.
+* `gyro_container_notifications`: new event `egress` (the egress IPs of the environment changed), enabled by default.
+
 ## 0.26.0 (2026-11-14)
 
 FEATURES:

@@ -54,7 +54,42 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string {
-	return fmt.Sprintf("gyro api: %d %s: %s", e.Status, e.Code, e.Message)
+	return fmt.Sprintf("gyro api: %d %s: %s", e.Status, e.Code, e.Message) + e.LimitHint()
+}
+
+// LimitHint explains how to raise a limit when the API refused because of one (details.how_to_increase, API 2.26.0+).
+func (e *APIError) LimitHint() string {
+	how, _ := e.Details["how_to_increase"].(string)
+	if how == "" {
+		return ""
+	}
+	key, _ := e.Details["limit_key"].(string)
+	what := "Account limit"
+	if key != "" {
+		what = "Limit " + key
+	}
+	if l, ok := e.Details["limit"].(float64); ok {
+		what += fmt.Sprintf(" (limit %d", int64(l))
+		if c, ok := e.Details["current"].(float64); ok {
+			what += fmt.Sprintf(", in use %d", int64(c))
+		}
+		what += ")"
+	}
+	switch how {
+	case "wait":
+		return "\n" + what + ": short rate limit, retry later."
+	case "upgrade_plan":
+		return "\n" + what + ": upgrade the plan, or open a support ticket if you need more than the largest plan."
+	}
+	cli := ""
+	if t, ok := e.Details["support_ticket"].(map[string]any); ok {
+		cli, _ = t["cli"].(string)
+	}
+	if cli == "" {
+		cli = "gyro ticket create --department-id 3 --subject \"Limit increase\" --message \"...\""
+	}
+	return "\n" + what + ": this limit can be raised with a support ticket (POST /api/v1/client/tickets), e.g.\n  " + cli +
+		"\nAll limits and usage: data source gyro_account_limits / GET /cloud/account/limits / `gyro limits`."
 }
 
 // IsNotFound reports a 404 (also returned for objects owned by someone else).
@@ -840,4 +875,49 @@ func (c *Client) AppStatus(ctx context.Context, serverID int64) (*AppInstall, er
 	}
 	_, err := c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/servers/%d/app", serverID), nil, nil, "", &r)
 	return r.Install, err
+}
+
+// AccountLimit is one row of GET /cloud/account/limits (API 2.26.0).
+type AccountLimit struct {
+	Key           string `json:"key"`
+	Group         string `json:"group"`
+	Scope         string `json:"scope"`
+	Limit         *int64 `json:"limit"`
+	Used          *int64 `json:"used"`
+	Unit          string `json:"unit"`
+	Custom        bool   `json:"custom"`
+	Increasable   bool   `json:"increasable"`
+	HowToIncrease string `json:"how_to_increase"`
+	Description   string `json:"description"`
+	Services      []struct {
+		ServiceID int64  `json:"service_id"`
+		Name      string `json:"name"`
+		Limit     *int64 `json:"limit"`
+		Used      *int64 `json:"used"`
+	} `json:"services"`
+}
+
+// AccountLimits is the answer of GET /cloud/account/limits.
+type AccountLimits struct {
+	NewAccount *struct {
+		Applies    bool   `json:"applies"`
+		PeriodDays int64  `json:"period_days"`
+		EndsAt     string `json:"ends_at"`
+		Servers    struct {
+			Limit int64 `json:"limit"`
+			Used  int64 `json:"used"`
+		} `json:"servers"`
+		ContainerEnvironments struct {
+			Limit int64 `json:"limit"`
+			Used  int64 `json:"used"`
+		} `json:"container_environments"`
+	} `json:"new_account"`
+	Limits []AccountLimit `json:"limits"`
+}
+
+// AccountLimits reads every limit of the account with its usage.
+func (c *Client) AccountLimits(ctx context.Context) (*AccountLimits, error) {
+	var out AccountLimits
+	_, err := c.Do(ctx, http.MethodGet, "cloud/account/limits", nil, nil, "", &out)
+	return &out, err
 }

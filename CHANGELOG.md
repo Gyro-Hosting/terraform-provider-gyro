@@ -1,3 +1,18 @@
+## 0.26.0 (2026-11-14)
+
+FEATURES:
+* **New data source `gyro_account_limits`** (Gyro Public API 2.26.0): every limit of the account with its usage (new-account limit of the prepaid
+  cloud, Gyro Cloud Istanbul servers, templates, additional IPs/disks per server, API order caps, keys, webhooks, firewall rules and groups,
+  storage, DNS, container plans, Pipeline, uptime monitors, projects). Use it in a `precondition` to fail at plan time.
+
+ENHANCEMENTS:
+* Errors caused by a limit now explain how to raise it: the diagnostic names the limit (`limit_key`, limit, usage) and prints the ready
+  support ticket command (`gyro ticket create --department-id 3 ...`); rate limits say "retry later", plan limits say "upgrade the plan".
+
+NOTES:
+* Provider documentation: new "Limits" section. Account limits are raised with a support ticket. New accounts: at most 5 Gyro Cloud Istanbul
+  servers and 1 container environment during the first 7 days (was 2 servers).
+
 ## 0.25.0 (2026-11-14)
 
 FEATURES:

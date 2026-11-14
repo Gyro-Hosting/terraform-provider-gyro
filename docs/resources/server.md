@@ -56,7 +56,7 @@ output "web_ipv4" {
 - `delete_immediately` (Boolean) destroy cancels at once (default; billing stops, server powered off and wiped after the grace period). false = file a cancellation request instead.
 - `hostname` (String) Host name. Changes are applied in place (must be a FQDN when renaming).
 - `location` (String, Deprecated) Deprecated: legacy location code, kept so existing configurations and state keep working. Use region.
-- `plan` (String) Plan name from gyro_products, e.g. standart-2-4. Use together with region. Changing it replaces the server.
+- `plan` (String) Plan name from gyro_products, e.g. standart-2-4. Use together with region. Changing it here REPLACES the server (a new server; the old one and its data are deleted). To keep the data, change the plan in place first (`gyro service resize <id> --plan ...` / POST /cloud/services/{id}/resize: tr-ist-1 keeps the disk and all data, the disk only grows, the server restarts only when needed - about 12 s), then set the new plan here; Terraform then sees no change.
 - `project_id` (Number) Project of the server (gyro_project id, 0 = default project). Set at order time; changing it later moves the server in place.
 - `power_state` (String) Desired power state: running or stopped.
 - `product_id` (Number) Product id from gyro_products. Alternative to plan + region.

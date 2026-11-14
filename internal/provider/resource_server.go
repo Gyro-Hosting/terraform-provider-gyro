@@ -75,7 +75,9 @@ func (r *serverResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Description:   "Product id from gyro_products. Alternative to plan + region.",
 				PlanModifiers: []planmodifier.Int64{int64planmodifier.RequiresReplaceIfConfigured(), int64planmodifier.UseStateForUnknown()}},
 			"plan": schema.StringAttribute{Optional: true, Computed: true,
-				Description:   "Plan name from gyro_products, e.g. standart-2-4. Use together with region. Changing it replaces the server.",
+				Description: "Plan name from gyro_products, e.g. standart-2-4. Use together with region. Changing it here REPLACES the server (a new server; the old one and its data are deleted). " +
+					"To keep the data, change the plan in place first (`gyro service resize <id> --plan ...` / POST /cloud/services/{id}/resize: tr-ist-1 keeps the disk and all data, the disk only grows, " +
+					"the server restarts only when needed - about 12 s), then set the new plan here; Terraform then sees no change.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIfConfigured(), stringplanmodifier.UseStateForUnknown()}},
 			"region": schema.StringAttribute{Optional: true, Computed: true,
 				Description:   "Region from gyro_locations, e.g. eu-de-1 or tr-ist-1 (Istanbul; images from gyro_images with region = \"tr-ist-1\"). Use together with plan. Changing it replaces the server.",

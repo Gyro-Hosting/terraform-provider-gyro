@@ -1,3 +1,18 @@
+## 0.25.0 (2026-11-14)
+
+FEATURES:
+* **New resource `gyro_storage`** (Gyro Public API 2.25.0): order a Gyro Object Storage (S3) or Protected Storage service (`plan` from
+  `gyro storage plans`, e.g. `standard-1tb` / `protected-250gb`; `cycle` monthly | quarterly | semiannually | annually; `name`;
+  `object_lock_buckets` for protected plans). Paid from the account balance; waits until the first bucket and access key exist (`status = active`).
+  `name` changes in place. `plan`, `cycle` and `object_lock_buckets` never trigger a replacement (that would delete the data): a change is refused
+  at plan time - change the plan in the panel / `gyro service resize`, then update the value. Destroy cancels at once and deletes every bucket
+  and object (`delete_immediately = false` files a cancellation request instead). Import with the service id.
+
+NOTES:
+* `gyro_server.plan`: the description now says clearly that changing `plan` in Terraform replaces the server (new server, old data deleted),
+  and how to keep the data: resize in place first (`gyro service resize` / POST /cloud/services/{id}/resize keeps the disk and all data on
+  tr-ist-1, the disk only grows, a restart of about 12 seconds only when needed), then set the new plan.
+
 ## 0.24.4 (2026-11-14)
 
 BUG FIXES:

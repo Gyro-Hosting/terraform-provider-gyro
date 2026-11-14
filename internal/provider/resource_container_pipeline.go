@@ -146,7 +146,7 @@ func (r *containerPipelineResource) Schema(_ context.Context, _ resource.SchemaR
 			"git_provider": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("github"),
 				Description: "github, gitlab, gitea, git (any git server; gyro-pipeline.yml is not read for git) or archive (no repository: builds only from uploaded archives, API POST .../uploads)."},
 			"repo": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""),
-				Description: "https clone URL without credentials (https://github.com/gyro-ornek/uygulama) or SSH address (git@github.com:gyro-ornek/uygulama.git, ssh://git@git.example.com:2222/team/app.git; needs deploy_key = true). Empty for git_provider = archive."},
+				Description: "https clone URL without credentials (https://github.com/gyro-ornek/uygulama) or SSH address (git@github.com:gyro-ornek/uygulama.git, ssh://git@git.example.com:2222/team/app.git; needs deploy_key = true). Required for github, gitlab, gitea and git; leave it out for git_provider = archive (checked at plan time)."},
 			"token":    schema.StringAttribute{Optional: true, Sensitive: true, Description: "Read-only access token for a private repository (stored encrypted by Gyro, never returned)."},
 			"git_user": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""), Description: "User name for the token (default per provider)."},
 			"branch":   schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("main"), Description: "Branches whose pushes build (comma separated globs, empty = none)."},

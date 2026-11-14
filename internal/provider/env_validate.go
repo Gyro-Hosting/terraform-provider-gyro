@@ -103,4 +103,28 @@ func (r *containerPipelineResource) ValidateConfig(ctx context.Context, req reso
 		}
 		validateEnvKeys(ctx, m, a, &resp.Diagnostics)
 	}
+	// 0.28.1 (#3892): repo is required for git providers and must stay empty for git_provider = "archive"
+	// (the API ignores a repository sent with archive, which would show as a permanent diff).
+	var prov, repo types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("git_provider"), &prov)...)
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("repo"), &repo)...)
+	if resp.Diagnostics.HasError() || prov.IsUnknown() || repo.IsUnknown() {
+		return
+	}
+	pv := "github"
+	if !prov.IsNull() {
+		pv = strings.ToLower(strings.TrimSpace(prov.ValueString()))
+	}
+	rp := ""
+	if !repo.IsNull() {
+		rp = strings.TrimSpace(repo.ValueString())
+	}
+	if pv == "archive" && rp != "" {
+		resp.Diagnostics.AddAttributeError(path.Root("repo"), "repo is not used with git_provider = \"archive\"",
+			"An archive pipeline has no repository: it builds the archives you upload (API POST .../pipelines/{id}/uploads, CLI gyro container pipeline upload). Remove repo, or set git_provider to github, gitlab, gitea or git.")
+	}
+	if pv != "archive" && rp == "" {
+		resp.Diagnostics.AddAttributeError(path.Root("repo"), "repo is required for git_provider = \""+pv+"\"",
+			"Give the https clone URL (https://github.com/gyro-ornek/uygulama) or an SSH address (git@github.com:gyro-ornek/uygulama.git). To build uploaded archives without a repository set git_provider = \"archive\".")
+	}
 }

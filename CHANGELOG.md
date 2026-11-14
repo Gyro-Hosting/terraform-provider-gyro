@@ -1,3 +1,14 @@
+## 0.28.1 (2026-11-14)
+
+BUG FIXES:
+* `gyro_container_pipeline`: `repo` is checked at plan time against `git_provider`: required for github / gitlab / gitea / git, and must be left
+  out for `git_provider = "archive"` (an archive pipeline has no repository; the API ignores a value sent with archive, which showed as a
+  permanent diff). Clear error message with the archive alternative (Gyro Public API 2.28.2).
+
+NOTES:
+* `gyro_container_service`: `notification { min_ready = N }` (API `alerts`) is applied on create; the API now also returns it at the top level
+  of the service (`alerts.min_ready`). No change needed in configurations.
+
 ## 0.28.0 (2026-11-14)
 
 ENHANCEMENTS:

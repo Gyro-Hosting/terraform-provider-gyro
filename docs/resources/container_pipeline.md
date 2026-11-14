@@ -93,7 +93,7 @@ resource "gyro_container_pipeline" "site" {
 - `git_user` (String) User name for the token (default per provider).
 - `memory_mi` (Number) Build memory in MiB (plan limit).
 - `notify` (List of String) Notifications: failed, succeeded, approval, rolled_back (channels = the environment's alert settings). Sorted.
-- `repo` (String) https clone URL without credentials (https://github.com/gyro-ornek/uygulama) or SSH address (git@github.com:gyro-ornek/uygulama.git, ssh://git@git.example.com:2222/team/app.git; needs deploy_key = true). Empty for git_provider = archive.
+- `repo` (String) https clone URL without credentials (https://github.com/gyro-ornek/uygulama) or SSH address (git@github.com:gyro-ornek/uygulama.git, ssh://git@git.example.com:2222/team/app.git; needs deploy_key = true). Required for github, gitlab, gitea and git; leave it out for git_provider = archive (checked at plan time).
 - `repo_file` (Boolean) Read gyro-pipeline.yml from the repository (it overrides these settings for a run).
 - `secrets` (Map of String, Sensitive) Build secrets for `commands` (write-only, masked in logs). Removing a key deletes the secret.
 - `ssh_host_fingerprint` (String) SSH servers other than GitHub / GitLab / Bitbucket (whose keys are pinned): the server's SHA256 host key fingerprint you verified (trust on first use). Builds stop if the server key changes.

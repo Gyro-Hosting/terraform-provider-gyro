@@ -9,6 +9,10 @@ resource "gyro_container_pipeline" "web" {
   image      = "web"
   targets    = ["web"]
 
+  # multi-stage Dockerfile: build the "production" stage (FROM node:20 AS production) instead of the last one
+  build_target = "production"
+  build_args   = { APP_VERSION = "1.2.0" } # Dockerfile ARG (not for secrets)
+
   # optional build step before the Dockerfile (tests ...); secrets are environment variables here
   build_image = "node:22-alpine"
   commands    = ["npm ci", "npm test"]

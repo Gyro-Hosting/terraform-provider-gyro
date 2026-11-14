@@ -137,8 +137,15 @@ func TestAccMockContainerPipeline(t *testing.T) {
 					return nil
 				})},
 			{Config: cfg("  token = \"tok1\"\n  secrets = { NPM_TOKEN = \"s1\" }\n"), PlanOnly: true},
-			{Config: cfg("  tags = \"v*\"\n  approval = true\n  commands = [\"npm ci\"]\n  build_image = \"node:22-alpine\"\n  secrets = { OTHER = \"x\" }\n"),
+			{Config: cfg("  tags = \"v*\"\n  approval = true\n  commands = [\"npm ci\"]\n  build_image = \"node:22-alpine\"\n  secrets = { OTHER = \"x\" }\n  build_target = \"production\"\n"),
 				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("gyro_container_pipeline.web", "build_target", "production"),
+					func(*terraform.State) error {
+						if pm.p["build_target"] != "production" {
+							return fmt.Errorf("build_target sent %v", pm.p["build_target"])
+						}
+						return nil
+					},
 					resource.TestCheckResourceAttr("gyro_container_pipeline.web", "tags", "v*"),
 					resource.TestCheckResourceAttr("gyro_container_pipeline.web", "commands.0", "npm ci"),
 					func(*terraform.State) error {

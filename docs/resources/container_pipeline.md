@@ -24,6 +24,10 @@ resource "gyro_container_pipeline" "web" {
   image      = "web"
   targets    = ["web"]
 
+  # multi-stage Dockerfile: build the "production" stage (FROM node:20 AS production) instead of the last one
+  build_target = "production"
+  build_args   = { APP_VERSION = "1.2.0" } # Dockerfile ARG (not for secrets)
+
   # optional build step before the Dockerfile (tests ...); secrets are environment variables here
   build_image = "node:22-alpine"
   commands    = ["npm ci", "npm test"]
@@ -79,6 +83,7 @@ resource "gyro_container_pipeline" "site" {
 - `build_args` (Map of String) Dockerfile ARG values (visible in the image history).
 - `build_env` (Map of String) Variables for `commands`. Names (also of `build_args` and `secrets`): letters, digits and `_`; invalid names are rejected at plan time.
 - `build_image` (String) Image that runs `commands` (e.g. node:22-alpine).
+- `build_target` (String) Stage of a multi-stage Dockerfile to build (`FROM node:20 AS production` -> `production`; `docker build --target`). Empty = the last stage. A name the Dockerfile does not have fails the run with `build_target_not_found`.
 - `commands` (List of String) Shell commands run in the repository root before the Dockerfile (tests, npm ci ...).
 - `context` (String) Build folder (empty = repository root).
 - `cpu_m` (Number) Build CPU in millicores (plan limit).

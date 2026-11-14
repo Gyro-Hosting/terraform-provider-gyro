@@ -1,3 +1,10 @@
+## 0.28.0 (2026-11-14)
+
+ENHANCEMENTS:
+* `gyro_container_pipeline`: new `build_target` - the stage of a multi-stage Dockerfile to build (`FROM node:20 AS production` -> `"production"`,
+  same as `docker build --target`). Empty = the last stage (unchanged behaviour). A stage the Dockerfile does not have fails the run with the
+  error `build_target_not_found` (Gyro Public API 2.28.0). Also settable in `gyro-pipeline.yml` (`build_target:`).
+
 ## 0.27.0 (2026-11-14)
 
 FEATURES:

@@ -8,6 +8,9 @@ import (
 	"strings"
 
 	"github.com/Gyro-Hosting/terraform-provider-gyro/internal/client"
+	"regexp"
+
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -17,8 +20,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
+
+// regexpBuildTarget: Dockerfile stage (kaniko / docker build --target); "" = last stage.
+var regexpBuildTarget = regexp.MustCompile(`^([a-z0-9._-]{1,64})?$`)
 
 // API 2.23.0 Gyro Pipeline (2.24.0: SSH deploy key / host key, provider "archive"): /cloud/containers/{id}/pipelines (typed tool routes, GyroKapsayici "ecs-pipeline").
 // A pipeline connects a git repository to a container environment: push / tag webhook -> Dockerfile build in an isolated
@@ -46,6 +53,7 @@ type containerPipelineModel struct {
 	Image         types.String `tfsdk:"image"`
 	Dockerfile    types.String `tfsdk:"dockerfile"`
 	Context       types.String `tfsdk:"context"`
+	BuildTarget   types.String `tfsdk:"build_target"`
 	Targets       types.List   `tfsdk:"targets"`
 	Approval      types.Bool   `tfsdk:"approval"`
 	AutoRollback  types.Bool   `tfsdk:"auto_rollback"`
@@ -98,6 +106,7 @@ type pipelineView struct {
 	Image         string            `json:"image"`
 	Dockerfile    string            `json:"dockerfile"`
 	Context       string            `json:"context"`
+	BuildTarget   string            `json:"build_target"`
 	Targets       []string          `json:"targets"`
 	Approval      bool              `json:"approval"`
 	AutoRollback  bool              `json:"auto_rollback"`
@@ -145,9 +154,12 @@ func (r *containerPipelineResource) Schema(_ context.Context, _ resource.SchemaR
 			"auto":     schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true), Description: "Webhook pushes start runs."},
 			"repo_file": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true),
 				Description: "Read gyro-pipeline.yml from the repository (it overrides these settings for a run)."},
-			"image":         schema.StringAttribute{Required: true, Description: "Image name in the environment registry (lowercase)."},
-			"dockerfile":    schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("Dockerfile"), Description: "Dockerfile path from the repository root."},
-			"context":       schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""), Description: "Build folder (empty = repository root)."},
+			"image":      schema.StringAttribute{Required: true, Description: "Image name in the environment registry (lowercase)."},
+			"dockerfile": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("Dockerfile"), Description: "Dockerfile path from the repository root."},
+			"context":    schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""), Description: "Build folder (empty = repository root)."},
+			"build_target": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""),
+				Description: "Stage of a multi-stage Dockerfile to build (`FROM node:20 AS production` -> `production`; `docker build --target`). Empty = the last stage. A name the Dockerfile does not have fails the run with `build_target_not_found`.",
+				Validators:  []validator.String{stringvalidator.RegexMatches(regexpBuildTarget, "a Dockerfile stage name: 1-64 lowercase letters, digits and . _ - (Docker stage names are case-insensitive), or empty")}},
 			"targets":       strList("Services that get the new image (empty = build only)."),
 			"approval":      schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Wait for approval before deploying."},
 			"auto_rollback": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true), Description: "Roll back when the new version is unhealthy."},
@@ -209,7 +221,7 @@ func plMap(ctx context.Context, m types.Map) map[string]string {
 func (m *containerPipelineModel) body(ctx context.Context) map[string]any {
 	b := map[string]any{"name": m.Name.ValueString(), "provider": m.Provider.ValueString(), "repo": m.Repo.ValueString(), "git_user": m.GitUser.ValueString(),
 		"branch": m.Branch.ValueString(), "tags": m.Tags.ValueString(), "auto": m.Auto.ValueBool(), "repo_file": m.RepoFile.ValueBool(), "image": m.Image.ValueString(),
-		"dockerfile": m.Dockerfile.ValueString(), "context": m.Context.ValueString(), "targets": plStrings(ctx, m.Targets), "approval": m.Approval.ValueBool(),
+		"dockerfile": m.Dockerfile.ValueString(), "context": m.Context.ValueString(), "build_target": m.BuildTarget.ValueString(), "targets": plStrings(ctx, m.Targets), "approval": m.Approval.ValueBool(),
 		"auto_rollback": m.AutoRollback.ValueBool(), "build_image": m.BuildImage.ValueString(), "commands": plStrings(ctx, m.Commands),
 		"build_env": plMap(ctx, m.BuildEnv), "build_args": plMap(ctx, m.BuildArgs), "notify": plStrings(ctx, m.Notify)}
 	for k, v := range map[string]types.Int64{"cpu_m": m.CPU, "memory_mi": m.Memory, "timeout_min": m.Timeout, "verify_min": m.Verify} {
@@ -226,6 +238,7 @@ func (r *containerPipelineResource) apply(ctx context.Context, m *containerPipel
 	m.Name, m.Provider, m.Repo, m.GitUser = types.StringValue(v.Name), types.StringValue(v.Provider), types.StringValue(v.Repo), types.StringValue(v.GitUser)
 	m.Branch, m.Tags, m.Auto, m.RepoFile = types.StringValue(v.Branch), types.StringValue(v.Tags), types.BoolValue(v.Auto), types.BoolValue(v.RepoFile)
 	m.Image, m.Dockerfile, m.Context = types.StringValue(v.Image), types.StringValue(v.Dockerfile), types.StringValue(v.Context)
+	m.BuildTarget = types.StringValue(v.BuildTarget)
 	m.Approval, m.AutoRollback, m.BuildImage = types.BoolValue(v.Approval), types.BoolValue(v.AutoRollback), types.StringValue(v.BuildImage)
 	lv := func(xs []string) types.List {
 		vals := []attr.Value{}

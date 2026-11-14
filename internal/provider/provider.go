@@ -99,12 +99,14 @@ func (p *gyroProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 }
 
 func (p *gyroProvider) Resources(_ context.Context) []func() resource.Resource {
-	return []func() resource.Resource{newServerResource, newSSHKeyResource, newWebhookResource, newCustomerResource, newAPIKeyResource, newMailboxResource, newAliasResource, newBucketResource, newBucketWebsiteResource, newBucketCorsResource, newStorageKeyResource, newDNSRecordResource, newAppResource, newLoadBalancerResource, newDNSZoneResource, newDNSRRsetResource, newFirewallResource, newSecurityGroupResource, newServerSecurityGroupsResource, newContainerServiceResource, newDNSAcmeKeyResource, newServerRdnsResource, newBucketObjectLockResource, newBucketNoncurrentResource, newServerTemplateResource, newServerIPResource, newContainerNotifyResource, newStorageMountResource, newProjectResource, newServiceProjectResource, newServerDiskResource, newServiceLabelResource, newContainerImageResource, newContainerPipelineResource, newStorageServiceResource, newContainerEnvironmentResource}
+	return []func() resource.Resource{newServerResource, newSSHKeyResource, newWebhookResource, newCustomerResource, newAPIKeyResource, newMailboxResource, newAliasResource, newBucketResource, newBucketWebsiteResource, newBucketCorsResource, newStorageKeyResource, newDNSRecordResource, newAppResource, newLoadBalancerResource, newDNSZoneResource, newDNSRRsetResource, newFirewallResource, newSecurityGroupResource, newServerSecurityGroupsResource, newContainerServiceResource, newDNSAcmeKeyResource, newServerRdnsResource, newBucketObjectLockResource, newBucketNoncurrentResource, newServerTemplateResource, newServerIPResource, newContainerNotifyResource, newStorageMountResource, newProjectResource, newServiceProjectResource, newServerDiskResource, newServiceLabelResource, newContainerImageResource, newContainerPipelineResource, newStorageServiceResource, newContainerEnvironmentResource,
+		newVPCResource, newSubnetResource, newServerNICResource, newPortForwardResource} // VPC, API 2.29.0 (v0.30.0)
 }
 
 func (p *gyroProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{newProductsDataSource, newLocationsDataSource, newImagesDataSource, newServicesDataSource, newAppsDataSource,
 		newContainerSizesDataSource, newPrepaidEstimateDataSource, // API 2.17.4
 		newAccountLimitsDataSource,        // API 2.26.0
-		newContainerEnvironmentDataSource} // API 2.27.0
+		newContainerEnvironmentDataSource, // API 2.27.0
+		newVPCDataSource}                  // API 2.29.0
 }

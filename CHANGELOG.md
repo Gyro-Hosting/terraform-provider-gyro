@@ -1,3 +1,20 @@
+## 0.30.0 (2026-11-15)
+
+FEATURES:
+* **New resource `gyro_vpc`**: private network for Gyro Cloud Istanbul (tr-ist-1) servers (`name`, `cidr` /16-/24 private range, `project_id`).
+  Creating it also creates the first subnet ("default", /24) - `default_subnet_id`. Optional VPC gateway (NAT + port forwarding):
+  `gateway_enabled` (hourly prepaid billing from the balance, 4.99 EUR/month cap, at least 1 hour), `gateway_nat`, `inter_subnet`
+  (allow / deny), read-only `gateway_public_ip`. Rename in place; destroy turns the gateway off first and refuses while server network
+  cards or port forwards are still in the VPC. Import: `<vpc_id>`.
+* **New resource `gyro_subnet`**: subnet of a VPC (`cidr` /20-/28, or `prefix` to let the API pick a free range); read-only `subnet_id`,
+  `gateway_ip`, `capacity`. Import: `<vpc_id>/<subnet_id>`.
+* **New resource `gyro_server_nic`**: attaches a tr-ist-1 server to a subnet (`ip` optional = next free address). Create waits until the card
+  is `ready` (up to 5 minutes; a card that ends in `error` is removed and the apply fails), destroy waits until the card is gone.
+  Import: `<server_id>/<nic_id>`.
+* **New resource `gyro_port_forward`**: tcp/udp port of the gateway's public IP to a private address in the VPC (needs `gateway_enabled`).
+  Import: `<vpc_id>/<forward_id>`.
+* **New data source `gyro_vpc`**: one VPC by `id` or `name`, with its subnets, gateway state and `default_subnet_id`.
+
 ## 0.29.0 (2026-11-15)
 
 FEATURES:

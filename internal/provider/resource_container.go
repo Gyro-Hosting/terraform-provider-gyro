@@ -137,7 +137,7 @@ func (r *containerServiceResource) Schema(_ context.Context, _ resource.SchemaRe
 				Description: "HTTP health check path (empty = TCP check)."},
 			"command":     schema.ListAttribute{ElementType: types.StringType, Optional: true, Description: "Override the image entrypoint."},
 			"args":        schema.ListAttribute{ElementType: types.StringType, Optional: true, Description: "Arguments for the command."},
-			"env":         schema.MapAttribute{ElementType: types.StringType, Optional: true, Description: "Plain environment variables. Names: letters, digits and _, not starting with a digit (invalid names fail at plan time)."},
+			"env":         schema.MapAttribute{ElementType: types.StringType, Optional: true, Description: "Plain environment variables. Names: letters, digits and _, not starting with a digit (invalid names fail at plan time). A value must not start with an invisible copy-paste character (U+200B, U+FEFF)."},
 			"secrets":     schema.MapAttribute{ElementType: types.StringType, Optional: true, Sensitive: true, Description: "Secret environment variables (write only; a key removed outside Terraform shows as a diff)."},
 			"domains":     schema.SetAttribute{ElementType: types.StringType, Optional: true, Description: "Your domains (CNAME to `host`); requires public = true."},
 			"run_as_user": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(0), Description: "User id in the container (0 = platform default 10001)."},

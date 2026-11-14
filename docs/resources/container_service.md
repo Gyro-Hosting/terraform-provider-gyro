@@ -69,7 +69,7 @@ output "web_url" {
 - `command` (List of String) Override the image entrypoint.
 - `cpu_m` (Number) CPU per instance in millicores.
 - `domains` (Set of String) Your domains (CNAME to `host`); requires public = true.
-- `env` (Map of String) Plain environment variables. Names: letters, digits and `_`, not starting with a digit, max 128; `GYRO_` / `KUBERNETES_` prefixes are reserved. Invalid names (also invisible copy-paste characters such as U+200B) are rejected at plan time.
+- `env` (Map of String) Plain environment variables. Names: letters, digits and `_`, not starting with a digit, max 128; `GYRO_` / `KUBERNETES_` prefixes are reserved. Invalid names (also invisible copy-paste characters such as U+200B) are rejected at plan time. A value that starts with an invisible character (U+200B, U+FEFF, U+200C, U+200D, U+2060) is rejected at plan time too (since 0.24.4); the platform would strip it.
 - `health_path` (String) HTTP health check path (empty = TCP check).
 - `memory_mi` (Number) Memory per instance in MiB.
 - `notification` (Attributes) Per-service alert threshold; channels are set with gyro_container_notifications. (see [below for nested schema](#nestedatt--notification))

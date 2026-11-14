@@ -1,3 +1,16 @@
+## 0.24.4 (2026-11-14)
+
+BUG FIXES:
+* `gyro_container_service` (`env`, `secrets`) and `gyro_container_pipeline` (`build_env`, `build_args`, `secrets`): a variable VALUE that starts
+  with an invisible character (zero-width space U+200B, BOM U+FEFF, U+200C, U+200D, U+2060 - usually from copy-paste) now fails
+  `terraform plan` with a clear message naming the variable (the value is never printed). The platform strips these characters, so the
+  value came back different and Terraform reported an inconsistent result after apply and tainted the resource. Inner and trailing spaces
+  and non-breaking spaces are kept by the platform and stay valid. Names were already validated in 0.24.3.
+
+NOTES:
+* Gyro Public API 2.24.4: a replica count outside the plan limit (`replicas`, `autoscaling.max`) is refused with 422 `invalid_replicas`
+  and the error names the limit ("at most N copies per service").
+
 ## 0.24.3 (2026-11-14)
 
 BUG FIXES:

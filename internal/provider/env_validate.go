@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-// v0.24.3 (gece testi GT-19): environment variable names are checked at plan time. The platform drops invisible characters
+// v0.24.3 (gece testi GT-19): environment variable names are checked at plan time (v0.24.4: also values starting with an invisible character). The platform drops invisible characters
 // (zero-width space, BOM, ...) from names and rejects anything else that is not a valid name, so a key like "​APP_MODE"
 // used to be saved as "APP_MODE" and Terraform reported "inconsistent result after apply" and tainted the resource.
 
@@ -57,8 +57,30 @@ func validateEnvKeys(ctx context.Context, m types.Map, attr string, diags *diag.
 		if p := envKeyProblem(k); p != "" {
 			diags.AddAttributeError(path.Root(attr).AtMapKey(k), "Invalid variable name / Geçersiz değişken adı",
 				fmt.Sprintf("%s key %q: %s.", attr, k, p))
+			continue
+		}
+		// v0.24.4: the platform also drops invisible characters at the START of a value (copy-paste BOM / zero-width space), so
+		// such a value would come back different from the configuration ("inconsistent result after apply", tainted resource).
+		// The value itself is never printed (secrets).
+		if v, ok := m.Elements()[k].(types.String); ok && !v.IsNull() && !v.IsUnknown() {
+			if r := envValueProblem(v.ValueString()); r != 0 {
+				diags.AddAttributeError(path.Root(attr).AtMapKey(k), "Invalid variable value / Geçersiz değişken değeri",
+					fmt.Sprintf("%s %q: the value starts with an invisible character U+%04X (often from copy-paste); remove it / değer görünmez bir karakterle başlıyor U+%04X (kopyala-yapıştır), silin.", attr, k, r, r))
+			}
 		}
 	}
+}
+
+// envValueProblem returns the leading invisible rune the platform would strip from a value (0 = none).
+func envValueProblem(v string) rune {
+	for _, r := range v {
+		switch r {
+		case 0xFEFF, 0x200B, 0x200C, 0x200D, 0x2060:
+			return r
+		}
+		return 0
+	}
+	return 0
 }
 
 func (r *containerServiceResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {

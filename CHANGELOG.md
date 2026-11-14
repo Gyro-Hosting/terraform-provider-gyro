@@ -1,3 +1,11 @@
+## 0.29.0 (2026-11-15)
+
+FEATURES:
+* **New resource:** `gyro_container_environment` - order a prepaid Gyro Containers (ECS) environment, `extra_nodes` (extra nodes of the
+  plan's size, same price, hourly; removal drains first), `egress_approval_hours` (egress IP changes wait for your approval), computed
+  `node_count`, `egress_ips`, `pending_egress_ips`. Destroy = `DELETE /cloud/containers/{id}` (same as the panel's Spending > Delete:
+  hourly charges stop, the environment is deleted at once). `plan` never triggers a replacement (Gyro Public API 2.30.0).
+
 ## 0.28.1 (2026-11-14)
 
 BUG FIXES:

@@ -77,7 +77,7 @@ resource "gyro_container_pipeline" "site" {
 - `auto_rollback` (Boolean) Roll back when the new version is unhealthy.
 - `branch` (String) Branches whose pushes build (comma separated globs, empty = none).
 - `build_args` (Map of String) Dockerfile ARG values (visible in the image history).
-- `build_env` (Map of String) Variables for `commands`.
+- `build_env` (Map of String) Variables for `commands`. Names (also of `build_args` and `secrets`): letters, digits and `_`; invalid names are rejected at plan time.
 - `build_image` (String) Image that runs `commands` (e.g. node:22-alpine).
 - `commands` (List of String) Shell commands run in the repository root before the Dockerfile (tests, npm ci ...).
 - `context` (String) Build folder (empty = repository root).

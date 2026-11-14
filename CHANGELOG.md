@@ -1,3 +1,11 @@
+## 0.24.3 (2026-11-14)
+
+BUG FIXES:
+* `gyro_container_service` (`env`, `secrets`) and `gyro_container_pipeline` (`build_env`, `build_args`, `secrets`): variable names are validated
+  at plan time. A name with an invisible character (e.g. a zero-width space from copy-paste), whitespace, a leading digit or a reserved
+  `GYRO_` / `KUBERNETES_` prefix now fails `terraform plan` with a clear message. Before, the platform cleaned the name, Terraform reported
+  an inconsistent result after apply and the resource was tainted.
+
 ## 0.24.2 (2026-11-14)
 
 NOTES:

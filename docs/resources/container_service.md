@@ -69,7 +69,7 @@ output "web_url" {
 - `command` (List of String) Override the image entrypoint.
 - `cpu_m` (Number) CPU per instance in millicores.
 - `domains` (Set of String) Your domains (CNAME to `host`); requires public = true.
-- `env` (Map of String) Plain environment variables.
+- `env` (Map of String) Plain environment variables. Names: letters, digits and `_`, not starting with a digit, max 128; `GYRO_` / `KUBERNETES_` prefixes are reserved. Invalid names (also invisible copy-paste characters such as U+200B) are rejected at plan time.
 - `health_path` (String) HTTP health check path (empty = TCP check).
 - `memory_mi` (Number) Memory per instance in MiB.
 - `notification` (Attributes) Per-service alert threshold; channels are set with gyro_container_notifications. (see [below for nested schema](#nestedatt--notification))
@@ -77,7 +77,7 @@ output "web_url" {
 - `public` (Boolean) Public HTTPS address <name>-<code>.gyroapp.net.
 - `replicas` (Number) Number of instances (0 = stopped).
 - `run_as_user` (Number) User id in the container (0 = platform default 10001).
-- `secrets` (Map of String, Sensitive) Secret environment variables (write only; a key removed outside Terraform shows as a diff).
+- `secrets` (Map of String, Sensitive) Secret environment variables (write only; a key removed outside Terraform shows as a diff). Same name rules as `env`.
 
 ### Read-Only
 

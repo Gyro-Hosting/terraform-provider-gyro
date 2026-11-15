@@ -1,3 +1,13 @@
+## 0.35.0 (2026-11-15)
+
+FEATURES:
+* **New resource `gyro_storage_bucket_notification`** (Gyro Public API 2.37.0): bucket event notification (webhook) of Gyro Object Storage and
+  Protected Storage. A signed HTTPS POST (X-Gyro-Signature = sha256=HMAC-SHA256(secret, X-Gyro-Timestamp + "." + raw body)) is sent to `url` when an
+  object is created, deleted or a bulk delete runs. `events` (default all three), `prefix`, `suffix` (case-insensitive, at most 10), `description`,
+  `enabled`. Read-only `webhook_id`, sensitive `secret` (only after create; empty after import), `status`, `disabled_reason` (`auto_failures` after
+  20 failed deliveries in a row - apply with `enabled = true` to re-enable). `service_id` and `bucket` replace it, everything else changes in place.
+  Import: `<service_id>/<webhook_id>`.
+
 ## 0.34.1 (2026-11-15)
 
 BUG FIXES (#3462):

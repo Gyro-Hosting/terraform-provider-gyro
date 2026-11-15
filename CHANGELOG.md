@@ -1,3 +1,31 @@
+## 0.37.0 (2026-11-15)
+
+FEATURES:
+* **New resource `gyro_server_addon`**: buys an add-on for a service (POST /cloud/services/{id}/addons) and waits until it is active, so a new
+  server, its Network Firewall add-on and its `gyro_firewall` / `gyro_server_security_groups` rules can be created in one apply (`depends_on`).
+  Pick the add-on by id (`addon_id` / `option_id`) or by name (`addon` / `option`, case-insensitive). Spends money (prepaid services: hourly from
+  the balance; invoiced services: an invoice paid from the balance, apply fails with the invoice if the balance is short). Destroy removes prepaid
+  add-ons at once; invoiced add-ons are only forgotten (warning: cancel in the panel). Import `<service_id>/<record_id>`.
+* **New resource `gyro_server_agent`**: keeps the Gyro guest agent of a tr-ist-1 server up to date (`keep_updated`, default true): an outdated
+  agent shows as an in-place change and is updated (only the agent; no restart). Agents too old to update themselves fail with the command to run.
+* **New resource `gyro_container_registry_policy`**: clean-up policy of the private image registry of a container environment (`enabled`, `keep`
+  1-50, `untagged_days` 1-90); destroy puts the default back (enabled, 10, 7).
+* `gyro_container_service`: `secrets_wo` + `secrets_wo_version` (Terraform 1.11+ write-only): secret values never reach the plan or the state;
+  they are sent on create and whenever `secrets_wo_version` changes; keys dropped from the map are deleted (`secrets_wo_keys` lists the names).
+  Conflicts with `secrets`; moving keys from `secrets` to `secrets_wo` does not delete them in between.
+* `gyro_vpc`: `first_subnet_name` / `first_subnet_cidr` - name and range of the subnet created with the VPC (create only; later changes do nothing).
+* `gyro_port_forward`: `name` (label, at most 64 characters, renamed in place without touching the gateway; Gyro Public API 2.39.0).
+* `gyro_service_label`: `manage_nickname = false` makes the resource own only the tags, so it can be used next to
+  `gyro_container_environment.name` / `gyro_storage.name` without the two overwriting each other.
+* Provider: `profile` - the API key (and URL) is read from a gyro CLI profile (~/.config/gyro/config.toml), also from the OS key store
+  (macOS Keychain, Windows Credential Manager, Secret Service) for profiles saved with `token_storage = "keyring"`. Order: `token` > `GYRO_TOKEN` >
+  `profile` / `GYRO_PROFILE` / the CLI default profile.
+* Guide "Keeping Terraform state in Gyro storage": s3 backend settings; state locking (`use_lockfile`) works on Protected Storage, not on Object Storage.
+
+BUG FIXES:
+* `gyro_container_service`: `notification = { min_ready = 0 }` - an imported service reads it back also when the API leaves `spec.alerts` out
+  (API 2.39.0 always sends it now); no lasting `+ notification` difference after import (#3462).
+
 ## 0.36.0 (2026-11-15)
 
 FEATURES:

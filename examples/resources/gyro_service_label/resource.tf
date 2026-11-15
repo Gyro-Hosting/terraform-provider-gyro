@@ -22,3 +22,11 @@ resource "gyro_service_label" "ecs" {
   nickname   = "gyro-ecs-1"
   tags       = [{ name = "staging", color = "orange" }]
 }
+
+# Only the tags of a container environment whose nickname comes from gyro_container_environment.name:
+# manage_nickname = false never sends, reads or clears the nickname, so the two resources do not overwrite each other.
+resource "gyro_service_label" "env_tags" {
+  service_id      = gyro_container_environment.app.id
+  manage_nickname = false
+  tags            = [{ name = "production", color = "green" }]
+}

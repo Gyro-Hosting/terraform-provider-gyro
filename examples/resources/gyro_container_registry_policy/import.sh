@@ -1,0 +1,1 @@
+terraform import gyro_container_registry_policy.app 12345

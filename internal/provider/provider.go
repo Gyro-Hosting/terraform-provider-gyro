@@ -29,6 +29,7 @@ func New(version string) func() provider.Provider {
 type providerModel struct {
 	Endpoint     types.String `tfsdk:"endpoint"`
 	Token        types.String `tfsdk:"token"`
+	Profile      types.String `tfsdk:"profile"`
 	PollInterval types.Int64  `tfsdk:"poll_interval_seconds"`
 	PollTimeout  types.Int64  `tfsdk:"poll_timeout_minutes"`
 }
@@ -56,7 +57,14 @@ func (p *gyroProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp 
 			"token": schema.StringAttribute{
 				Optional:    true,
 				Sensitive:   true,
-				Description: "Client API key (wck_...). Defaults to $GYRO_TOKEN. Needs Module:Addons/GyroAPI/cloud_read and, for writes, cloud_write / cloud_order / cloud_delete.",
+				Description: "Client API key (wck_...). Defaults to $GYRO_TOKEN, then to the gyro CLI profile (see profile). Needs Module:Addons/GyroAPI/cloud_read and, for writes, cloud_write / cloud_order / cloud_delete.",
+			},
+			"profile": schema.StringAttribute{
+				Optional: true,
+				Description: "gyro CLI profile to take the API key (and API URL) from when token and $GYRO_TOKEN are not set: ~/.config/gyro/config.toml " +
+					"($GYRO_CONFIG_FILE / $XDG_CONFIG_HOME respected); a profile saved with token_storage = \"keyring\" is read from the OS key store " +
+					"(macOS Keychain, Windows Credential Manager, Linux Secret Service). Defaults to $GYRO_PROFILE, then the CLI default profile. " +
+					"Order: token > $GYRO_TOKEN > profile. Create one with `gyro auth login` or `gyro configure`.",
 			},
 			"poll_interval_seconds": schema.Int64Attribute{Optional: true, Description: "Seconds between status polls (default 5)."},
 			"poll_timeout_minutes":  schema.Int64Attribute{Optional: true, Description: "Maximum minutes to wait for a server to become ready (default 15)."},
@@ -78,9 +86,24 @@ func (p *gyroProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	if !m.Token.IsNull() && !m.Token.IsUnknown() && m.Token.ValueString() != "" {
 		token = m.Token.ValueString()
 	}
+	if token == "" { // #3462 B7: gyro CLI profile (file or OS key store)
+		prof, explicit := os.Getenv("GYRO_PROFILE"), os.Getenv("GYRO_PROFILE") != ""
+		if !m.Profile.IsNull() && !m.Profile.IsUnknown() && m.Profile.ValueString() != "" {
+			prof, explicit = m.Profile.ValueString(), true
+		}
+		t, u, _, err := profileToken(prof, explicit)
+		if err != nil {
+			resp.Diagnostics.AddAttributeError(path.Root("profile"), "Reading the gyro CLI profile failed", err.Error())
+			return
+		}
+		token = t
+		if u != "" && os.Getenv("GYRO_ENDPOINT") == "" && (m.Endpoint.IsNull() || m.Endpoint.ValueString() == "") {
+			endpoint = u
+		}
+	}
 	if token == "" {
 		resp.Diagnostics.AddAttributeError(path.Root("token"), "Missing Gyro API key",
-			"Set the provider \"token\" argument or the GYRO_TOKEN environment variable to a client API key (wck_...).")
+			"Set the provider \"token\" argument, the GYRO_TOKEN environment variable or a gyro CLI profile (provider \"profile\", GYRO_PROFILE) to a client API key (wck_...).")
 		return
 	}
 	pd := &providerData{
@@ -101,8 +124,9 @@ func (p *gyroProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 func (p *gyroProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{newServerResource, newSSHKeyResource, newWebhookResource, newCustomerResource, newAPIKeyResource, newMailboxResource, newAliasResource, newBucketResource, newBucketWebsiteResource, newBucketCorsResource, newStorageKeyResource, newDNSRecordResource, newAppResource, newLoadBalancerResource, newDNSZoneResource, newDNSRRsetResource, newFirewallResource, newSecurityGroupResource, newServerSecurityGroupsResource, newContainerServiceResource, newDNSAcmeKeyResource, newServerRdnsResource, newBucketObjectLockResource, newBucketNoncurrentResource, newServerTemplateResource, newServerIPResource, newContainerNotifyResource, newStorageMountResource, newProjectResource, newServiceProjectResource, newServerDiskResource, newServiceLabelResource, newContainerImageResource, newContainerPipelineResource, newStorageServiceResource, newContainerEnvironmentResource, newContainerLogsResource, newContainerScheduleResource, newBucketNotificationResource,
 		newVPCResource, newSubnetResource, newServerNICResource, newPortForwardResource, // VPC, API 2.29.0 (v0.30.0)
-		newContainerVPCResource,   // VPC V2, API 2.34.0 (v0.32.0)
-		newServerPublicIPResource} // v0.33.0
+		newContainerVPCResource,                                                   // VPC V2, API 2.34.0 (v0.32.0)
+		newServerPublicIPResource,                                                 // v0.33.0
+		newServerAddonResource, newServerAgentResource, newRegistryPolicyResource} // #3462 tur 1, v0.37.0
 }
 
 func (p *gyroProvider) DataSources(_ context.Context) []func() datasource.DataSource {

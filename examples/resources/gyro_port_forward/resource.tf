@@ -15,4 +15,5 @@ resource "gyro_port_forward" "ssh" {
   target_ip    = gyro_server_nic.web.ip
   target_port  = 22
   source_cidrs = ["203.0.113.10/32", "198.51.100.0/24"]
+  name         = "ssh-admin" # label only; renamed in place
 }

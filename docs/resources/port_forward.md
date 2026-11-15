@@ -3,12 +3,12 @@
 page_title: "gyro_port_forward Resource - gyro"
 subcategory: ""
 description: |-
-  Forwards a port of the VPC gateway's public IP (gyro_vpc.gateway_public_ip) to a private address in the VPC. Needs gateway_enabled = true on the gyro_vpc. Up to 20 per VPC by default. Every attribute except source_cidrs is ForceNew.
+  Forwards a port of the VPC gateway's public IP (gyro_vpc.gateway_public_ip) to a private address in the VPC. Needs gateway_enabled = true on the gyro_vpc. Up to 20 per VPC by default. Every attribute except source_cidrs and name is ForceNew.
 ---
 
 # gyro_port_forward (Resource)
 
-Forwards a port of the VPC gateway's public IP (gyro_vpc.gateway_public_ip) to a private address in the VPC. Needs gateway_enabled = true on the gyro_vpc. Up to 20 per VPC by default. Every attribute except source_cidrs is ForceNew.
+Forwards a port of the VPC gateway's public IP (gyro_vpc.gateway_public_ip) to a private address in the VPC. Needs gateway_enabled = true on the gyro_vpc. Up to 20 per VPC by default. Every attribute except source_cidrs and name is ForceNew.
 
 ## Example Usage
 
@@ -30,6 +30,7 @@ resource "gyro_port_forward" "ssh" {
   target_ip    = gyro_server_nic.web.ip
   target_port  = 22
   source_cidrs = ["203.0.113.10/32", "198.51.100.0/24"]
+  name         = "ssh-admin" # label only; renamed in place
 }
 ```
 
@@ -46,6 +47,7 @@ resource "gyro_port_forward" "ssh" {
 
 ### Optional
 
+- `name` (String) Label of the forward (at most 64 characters; empty = no name). Only a label: changing it renames in place and does not touch the gateway. Gyro Public API 2.39.0+.
 - `source_cidrs` (Set of String) Only these public IPv4 networks may use the forward (CIDR, a single address is /32, at most 20). Empty or left out = everyone. Updated in place.
 
 ### Read-Only

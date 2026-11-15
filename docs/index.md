@@ -43,4 +43,5 @@ When an apply is refused because of a limit, the error names the limit, the curr
 - `endpoint` (String) API base URL. Defaults to $GYRO_ENDPOINT or https://www.gyrohosting.com/api/v1/client.
 - `poll_interval_seconds` (Number) Seconds between status polls (default 5).
 - `poll_timeout_minutes` (Number) Maximum minutes to wait for a server to become ready (default 15).
-- `token` (String, Sensitive) Client API key (wck_...). Defaults to $GYRO_TOKEN. Needs Module:Addons/GyroAPI/cloud_read and, for writes, cloud_write / cloud_order / cloud_delete.
+- `profile` (String) gyro CLI profile to take the API key (and API URL) from when token and $GYRO_TOKEN are not set: ~/.config/gyro/config.toml ($GYRO_CONFIG_FILE / $XDG_CONFIG_HOME respected); a profile saved with token_storage = "keyring" is read from the OS key store (macOS Keychain, Windows Credential Manager, Linux Secret Service). Defaults to $GYRO_PROFILE, then the CLI default profile. Order: token > $GYRO_TOKEN > profile. Create one with `gyro auth login` or `gyro configure`.
+- `token` (String, Sensitive) Client API key (wck_...). Defaults to $GYRO_TOKEN, then to the gyro CLI profile (see profile). Needs Module:Addons/GyroAPI/cloud_read and, for writes, cloud_write / cloud_order / cloud_delete.

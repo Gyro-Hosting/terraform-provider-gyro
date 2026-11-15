@@ -36,3 +36,12 @@ resource "gyro_container_service" "web" {
 output "web_url" {
   value = gyro_container_service.web.url
 }
+
+# Secrets kept out of the Terraform state (Terraform 1.11+ write-only argument): bump secrets_wo_version to push new values.
+resource "gyro_container_service" "worker" {
+  service_id         = gyro_container_environment.app.id
+  name               = "worker"
+  image              = "ghcr.io/gyro-proje/worker:1.0"
+  secrets_wo         = { DB_PASSWORD = var.db_password, RABBITMQ_URL = var.rabbitmq_url }
+  secrets_wo_version = 1
+}

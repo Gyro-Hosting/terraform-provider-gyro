@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -42,6 +43,12 @@ type serviceLabelModel struct {
 	ServiceID types.Int64     `tfsdk:"service_id"`
 	Nickname  types.String    `tfsdk:"nickname"`
 	Tags      []labelTagModel `tfsdk:"tags"`
+	// ManageNickname (#3462): false = this resource owns only the tags; the nickname belongs to e.g. gyro_container_environment.name / gyro_storage.name
+	ManageNickname types.Bool `tfsdk:"manage_nickname"`
+}
+
+func (m *serviceLabelModel) ownsNick() bool {
+	return m.ManageNickname.IsNull() || m.ManageNickname.IsUnknown() || m.ManageNickname.ValueBool()
 }
 
 func (r *serviceLabelResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -52,13 +59,17 @@ func (r *serviceLabelResource) Schema(_ context.Context, _ resource.SchemaReques
 	resp.Schema = schema.Schema{
 		Description: "Nickname and colour tags of any existing service (cloud server, container environment, VDS, storage, DNS, mail, ...). " +
 			"The nickname is shown as the service title in the client area (the product name and service number stay below it) and is returned by gyro_services. " +
-			"This resource owns the whole label: destroying it clears the nickname and all tags. Only the service owner sees the label (staff see it read only).",
+			"By default this resource owns the whole label: destroying it clears the nickname and all tags. With manage_nickname = false it owns only the tags " +
+			"(use this next to gyro_container_environment.name or gyro_storage.name, which set the nickname). Only the service owner sees the label (staff see it read only).",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}, Description: "Same as service_id."},
 			"service_id": schema.Int64Attribute{Required: true, Description: "Service id (gyro_services, gyro_server.id, client area #number). Changing it replaces the resource.",
 				PlanModifiers: []planmodifier.Int64{int64planmodifier.RequiresReplace()}},
 			"nickname": schema.StringAttribute{Optional: true, Description: "1-60 characters, e.g. \"api-gateway\". Omit to keep the service without a nickname.",
 				Validators: []validator.String{stringvalidator.LengthBetween(1, 60)}},
+			"manage_nickname": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true),
+				Description: "true (default) = the resource owns nickname and tags. false = it owns only the tags: the nickname is never sent, read or cleared " +
+					"(set it with gyro_container_environment.name, gyro_storage.name or the panel); nickname must then be left out."},
 			"tags": schema.ListNestedAttribute{Optional: true, Description: "Up to 10 tags, kept in this order. Names are case-insensitively unique.",
 				Validators: []validator.List{listvalidator.SizeAtMost(10)},
 				NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
@@ -84,11 +95,28 @@ func (r *serviceLabelResource) Configure(_ context.Context, req resource.Configu
 }
 
 func (r *serviceLabelResource) put(ctx context.Context, m *serviceLabelModel) error {
+	if !m.ownsNick() {
+		l, err := r.pd.c.SetServiceLabelTags(ctx, m.ServiceID.ValueInt64(), labelTags(m))
+		if err != nil {
+			return err
+		}
+		applyLabel(m, l)
+		return nil
+	}
 	var nick *string
 	if !m.Nickname.IsNull() && !m.Nickname.IsUnknown() {
 		v := m.Nickname.ValueString()
 		nick = &v
 	}
+	l, err := r.pd.c.SetServiceLabel(ctx, m.ServiceID.ValueInt64(), nick, labelTags(m))
+	if err != nil {
+		return err
+	}
+	applyLabel(m, l)
+	return nil
+}
+
+func labelTags(m *serviceLabelModel) []client.LabelTag {
 	tags := make([]client.LabelTag, 0, len(m.Tags))
 	for _, t := range m.Tags {
 		c := ""
@@ -97,18 +125,18 @@ func (r *serviceLabelResource) put(ctx context.Context, m *serviceLabelModel) er
 		}
 		tags = append(tags, client.LabelTag{Name: t.Name.ValueString(), Color: c})
 	}
-	l, err := r.pd.c.SetServiceLabel(ctx, m.ServiceID.ValueInt64(), nick, tags)
-	if err != nil {
-		return err
-	}
-	applyLabel(m, l)
-	return nil
+	return tags
 }
 
 // applyLabel copies the API answer into the model. Tags that were configured keep the configured name spelling.
 func applyLabel(m *serviceLabelModel, l *client.ServiceLabel) {
 	m.ID = types.StringValue(strconv.FormatInt(m.ServiceID.ValueInt64(), 10))
-	if l.Nickname != nil && *l.Nickname != "" {
+	if m.ManageNickname.IsNull() || m.ManageNickname.IsUnknown() {
+		m.ManageNickname = types.BoolValue(true)
+	}
+	if !m.ownsNick() {
+		m.Nickname = types.StringNull() // not ours: never read
+	} else if l.Nickname != nil && *l.Nickname != "" {
 		m.Nickname = types.StringValue(*l.Nickname)
 	} else {
 		m.Nickname = types.StringNull()
@@ -185,7 +213,13 @@ func (r *serviceLabelResource) Delete(ctx context.Context, req resource.DeleteRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if _, err := r.pd.c.SetServiceLabel(ctx, m.ServiceID.ValueInt64(), nil, nil); err != nil && !client.IsNotFound(err) {
+	var err error
+	if m.ownsNick() {
+		_, err = r.pd.c.SetServiceLabel(ctx, m.ServiceID.ValueInt64(), nil, nil)
+	} else {
+		_, err = r.pd.c.SetServiceLabelTags(ctx, m.ServiceID.ValueInt64(), nil) // only the tags; the nickname stays
+	}
+	if err != nil && !client.IsNotFound(err) {
 		resp.Diagnostics.AddError("Clearing the service label failed", err.Error())
 	}
 }
@@ -196,4 +230,16 @@ func (r *serviceLabelResource) ImportState(ctx context.Context, req resource.Imp
 		return
 	}
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// ValidateConfig: nickname cannot be set when manage_nickname = false.
+func (r *serviceLabelResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var mn types.Bool
+	var nick types.String
+	req.Config.GetAttribute(ctx, path.Root("manage_nickname"), &mn)
+	req.Config.GetAttribute(ctx, path.Root("nickname"), &nick)
+	if !mn.IsNull() && !mn.IsUnknown() && !mn.ValueBool() && !nick.IsNull() {
+		resp.Diagnostics.AddAttributeError(path.Root("nickname"), "nickname with manage_nickname = false",
+			"With manage_nickname = false this resource manages only the tags; set the nickname with gyro_container_environment.name, gyro_storage.name or the panel, and leave nickname out here.")
+	}
 }

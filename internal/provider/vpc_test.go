@@ -87,7 +87,8 @@ func (x *vpcMock) pfList(vpc int64) []map[string]any {
 			if src == nil {
 				src = []any{}
 			}
-			out = append(out, map[string]any{"id": i, "protocol": p["protocol"], "public_port": p["public_port"], "target_ip": p["target_ip"], "target_port": p["target_port"], "source_cidrs": src})
+			nm, _ := p["name"].(string)
+			out = append(out, map[string]any{"id": i, "protocol": p["protocol"], "public_port": p["public_port"], "target_ip": p["target_ip"], "target_port": p["target_port"], "source_cidrs": src, "name": nm})
 		}
 	}
 	return out
@@ -186,6 +187,14 @@ func (x *vpcMock) vpcHandler(w http.ResponseWriter, r *http.Request, mt []string
 		oct := strings.Split(base, ".")
 		sid := x.id()
 		x.subnets[sid] = &vpcMockSubnet{ID: sid, VPC: nid, Name: "default", CIDR: oct[0] + "." + oct[1] + ".0.0/24", GW: oct[0] + "." + oct[1] + ".0.1"}
+		if sb, ok := body["subnet"].(map[string]any); ok { // API: first subnet name / range
+			if n, ok := sb["name"].(string); ok {
+				x.subnets[sid].Name = n
+			}
+			if c, ok := sb["cidr"].(string); ok {
+				x.subnets[sid].CIDR, x.subnets[sid].GW = c, strings.TrimSuffix(strings.Split(c, "/")[0], ".0")+".1"
+			}
+		}
 		jsonOut(w, 201, x.view(nid))
 	case sub == "" && r.Method == http.MethodGet:
 		jsonOut(w, 200, x.view(id))
@@ -288,8 +297,9 @@ func (x *vpcMock) vpcHandler(w http.ResponseWriter, r *http.Request, mt []string
 		if src == nil {
 			src = []any{}
 		}
-		x.pfs[pid] = map[string]any{"vpc": id, "protocol": body["protocol"], "public_port": body["public_port"], "target_ip": body["target_ip"], "target_port": body["target_port"], "source_cidrs": src}
-		jsonOut(w, 201, map[string]any{"id": pid, "protocol": body["protocol"], "public_port": body["public_port"], "target_ip": body["target_ip"], "target_port": body["target_port"], "source_cidrs": src})
+		nm, _ := body["name"].(string)
+		x.pfs[pid] = map[string]any{"vpc": id, "protocol": body["protocol"], "public_port": body["public_port"], "target_ip": body["target_ip"], "target_port": body["target_port"], "source_cidrs": src, "name": nm}
+		jsonOut(w, 201, map[string]any{"id": pid, "protocol": body["protocol"], "public_port": body["public_port"], "target_ip": body["target_ip"], "target_port": body["target_port"], "source_cidrs": src, "name": nm})
 	case sub == "port-forwards" && oid != "" && r.Method == http.MethodPatch:
 		pid, _ := strconv.ParseInt(oid, 10, 64)
 		p := x.pfs[pid]
@@ -298,11 +308,17 @@ func (x *vpcMock) vpcHandler(w http.ResponseWriter, r *http.Request, mt []string
 			return
 		}
 		src, ok := body["source_cidrs"].([]any)
-		if !ok {
-			jsonErr(w, 422, "invalid_source", "source_cidrs missing")
+		nm, hasName := body["name"].(string)
+		if !ok && !hasName {
+			jsonErr(w, 422, "invalid_source", "source_cidrs and/or name missing")
 			return
 		}
-		p["source_cidrs"] = src
+		if ok {
+			p["source_cidrs"] = src
+		}
+		if hasName {
+			p["name"] = nm
+		}
 		x.pfPatches++
 		for _, v := range x.pfList(id) {
 			if v["id"] == pid {

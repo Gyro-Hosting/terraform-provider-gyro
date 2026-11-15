@@ -11,3 +11,11 @@ resource "gyro_vpc" "uretim" {
 output "gateway_ip" {
   value = gyro_vpc.uretim.gateway_public_ip
 }
+
+# First subnet with your own name and range (used only when the VPC is created).
+resource "gyro_vpc" "veri" {
+  name              = "gyro-proje-veri"
+  cidr              = "10.20.0.0/16"
+  first_subnet_name = "veri"
+  first_subnet_cidr = "10.20.1.0/24"
+}

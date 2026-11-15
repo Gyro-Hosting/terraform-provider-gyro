@@ -23,6 +23,8 @@ type containerMock struct {
 	domains map[string][]string
 	calls   []string
 	ntf     map[string]any
+	// noZeroAlerts: like the API before 2.39.0 (and the controller), spec.alerts is left out when min_ready is 0
+	noZeroAlerts bool
 }
 
 func newContainerMock() *containerMock {
@@ -117,6 +119,15 @@ func (m *containerMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ds = append(ds, map[string]any{"name": d, "status": "pending"})
 		}
 		sp := m.svcs[n]
+		if a, _ := sp["alerts"].(map[string]any); m.noZeroAlerts && a != nil && a["min_ready"] == float64(0) {
+			cp := map[string]any{}
+			for k, v := range sp {
+				if k != "alerts" {
+					cp[k] = v
+				}
+			}
+			sp = cp
+		}
 		out := map[string]any{"service_id": 7, "name": n, "spec": sp, "revision": m.rev[n], "state": "running", "domains": ds, "secret_keys": keys}
 		if sp["public"] == true {
 			out["url"], out["host"] = "https://"+n+"-abcd12.gyroapp.net", n+"-abcd12.gyroapp.net"

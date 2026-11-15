@@ -10,12 +10,18 @@ import (
 	"strings"
 
 	"github.com/Gyro-Hosting/terraform-provider-gyro/internal/client"
+	"github.com/hashicorp/terraform-plugin-framework-validators/mapvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -108,6 +114,9 @@ type containerServiceModel struct {
 	Args         types.List             `tfsdk:"args"`
 	Env          types.Map              `tfsdk:"env"`
 	Secrets      types.Map              `tfsdk:"secrets"`
+	SecretsWO    types.Map              `tfsdk:"secrets_wo"`
+	SecretsWOVer types.Int64            `tfsdk:"secrets_wo_version"`
+	SecretsWOKey types.List             `tfsdk:"secrets_wo_keys"`
 	Domains      types.Set              `tfsdk:"domains"`
 	RunAsUser    types.Int64            `tfsdk:"run_as_user"`
 	Autoscaling  *containerAutoscaling  `tfsdk:"autoscaling"`
@@ -141,10 +150,21 @@ func (r *containerServiceResource) Schema(_ context.Context, _ resource.SchemaRe
 			"public":     schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), Description: "Public HTTPS address <name>-<code>.gyroapp.net."},
 			"health_path": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""),
 				Description: "HTTP health check path (empty = TCP check)."},
-			"command":     schema.ListAttribute{ElementType: types.StringType, Optional: true, Description: "Override the image entrypoint."},
-			"args":        schema.ListAttribute{ElementType: types.StringType, Optional: true, Description: "Arguments for the command."},
-			"env":         schema.MapAttribute{ElementType: types.StringType, Optional: true, Description: "Plain environment variables. Names: letters, digits and _, not starting with a digit (invalid names fail at plan time). A value must not start with an invisible copy-paste character (U+200B, U+FEFF)."},
-			"secrets":     schema.MapAttribute{ElementType: types.StringType, Optional: true, Sensitive: true, Description: "Secret environment variables (write only; a key removed outside Terraform shows as a diff)."},
+			"command": schema.ListAttribute{ElementType: types.StringType, Optional: true, Description: "Override the image entrypoint."},
+			"args":    schema.ListAttribute{ElementType: types.StringType, Optional: true, Description: "Arguments for the command."},
+			"env":     schema.MapAttribute{ElementType: types.StringType, Optional: true, Description: "Plain environment variables. Names: letters, digits and _, not starting with a digit (invalid names fail at plan time). A value must not start with an invisible copy-paste character (U+200B, U+FEFF)."},
+			"secrets": schema.MapAttribute{ElementType: types.StringType, Optional: true, Sensitive: true,
+				Validators:  []validator.Map{mapvalidator.ConflictsWith(path.MatchRoot("secrets_wo"))},
+				Description: "Secret environment variables (values are kept in the Terraform state; a key removed outside Terraform shows as a diff). To keep values out of the state use secrets_wo."},
+			"secrets_wo": schema.MapAttribute{ElementType: types.StringType, Optional: true, Sensitive: true, WriteOnly: true,
+				Validators: []validator.Map{mapvalidator.AlsoRequires(path.MatchRoot("secrets_wo_version"))},
+				Description: "Secret environment variables that are never stored in the Terraform state or plan (write-only argument, Terraform 1.11+). " +
+					"Sent when the service is created and whenever secrets_wo_version changes - bump the version to push new values. Keys dropped from the map " +
+					"(compared with secrets_wo_keys) are deleted. After import (or when secrets_wo_version is first added) the next apply sends secrets_wo once. Cannot be combined with secrets."},
+			"secrets_wo_version": schema.Int64Attribute{Optional: true,
+				Description: "Change this number (e.g. 1 -> 2) to send secrets_wo again; while it stays the same, secrets_wo is not sent."},
+			"secrets_wo_keys": schema.ListAttribute{ElementType: types.StringType, Computed: true, PlanModifiers: []planmodifier.List{woKeys{}},
+				Description: "Names (not values) of the secrets last sent with secrets_wo, sorted."},
 			"domains":     schema.SetAttribute{ElementType: types.StringType, Optional: true, Description: "Your domains (CNAME to `host`); requires public = true."},
 			"run_as_user": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(0), Description: "User id in the container (0 = platform default 10001)."},
 			"autoscaling": schema.SingleNestedAttribute{Optional: true,
@@ -157,7 +177,8 @@ func (r *containerServiceResource) Schema(_ context.Context, _ resource.SchemaRe
 					"memory_percent": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(0), Description: "Target average memory use in % of memory_mi (0 = off, else 10-95)."},
 				}},
 			"notification": schema.SingleNestedAttribute{Optional: true,
-				Description: "Per-service alert threshold; channels are set with gyro_container_notifications.",
+				Description: "Per-service alert threshold; channels are set with gyro_container_notifications. Left out = off (min_ready 0). " +
+					"An imported service always reads it back, also when it is off ({ min_ready = 0 }).",
 				Attributes: map[string]schema.Attribute{
 					"min_ready": schema.Int64Attribute{Required: true, Description: "Alert when fewer replicas are ready (0 = off)."},
 				}},
@@ -255,10 +276,17 @@ func (r *containerServiceResource) apply(ctx context.Context, m *containerServic
 		m.Replicas = types.Int64Value(sp.Replicas)
 		m.Autoscaling = nil
 	}
-	if sp.Alerts != nil && (sp.Alerts.MinReady > 0 || imported) { // #3462: min_ready = 0 is read back too (import left it null)
-		m.Notification = &containerNotification{MinReady: types.Int64Value(sp.Alerts.MinReady)}
-	} else if m.Notification != nil {
-		m.Notification = &containerNotification{MinReady: types.Int64Value(0)}
+	// #3462: an imported service always reads the block back (also min_ready 0, API 2.39.0 sends spec.alerts every time;
+	// an older answer without it means 0); otherwise it is filled when configured or when the remote value is on.
+	var mr int64
+	if sp.Alerts != nil {
+		mr = sp.Alerts.MinReady
+	}
+	if imported || mr > 0 || m.Notification != nil {
+		m.Notification = &containerNotification{MinReady: types.Int64Value(mr)}
+	}
+	if m.SecretsWOKey.IsNull() || m.SecretsWOKey.IsUnknown() { // import / state from an older provider
+		m.SecretsWOKey = types.ListValueMust(types.StringType, []attr.Value{})
 	}
 	m.Public, m.HealthPath, m.RunAsUser = types.BoolValue(sp.Public), types.StringValue(sp.HealthPath), types.Int64Value(sp.RunAsUser)
 	if len(sp.Command) > 0 || !m.Command.IsNull() {
@@ -311,7 +339,7 @@ func nonNil(s []string) []string {
 	return s
 }
 
-func (r *containerServiceResource) syncSecrets(ctx context.Context, m *containerServiceModel, old map[string]string) error {
+func (r *containerServiceResource) syncSecrets(ctx context.Context, m *containerServiceModel, old map[string]string, skip ...map[string]string) error {
 	want := ctrMap(ctx, m.Secrets)
 	set := map[string]any{}
 	for k, v := range want {
@@ -322,9 +350,19 @@ func (r *containerServiceResource) syncSecrets(ctx context.Context, m *container
 	del := []string{}
 	for k := range old {
 		if _, ok := want[k]; !ok {
+			if len(skip) > 0 && skip[0] != nil {
+				if _, sent := skip[0][k]; sent { // moved to secrets_wo: already set there, do not delete
+					continue
+				}
+			}
 			del = append(del, k)
 		}
 	}
+	return r.writeSecrets(ctx, m, set, del)
+}
+
+// writeSecrets: PUT {set} then DELETE ?keys= (missing keys are not an error).
+func (r *containerServiceResource) writeSecrets(ctx context.Context, m *containerServiceModel, set map[string]any, del []string) error {
 	p := containerPath(sid(m.ServiceID), m.Name.ValueString()) + "/secrets"
 	if len(set) > 0 {
 		if _, err := r.pd.c.TypedWrite(ctx, http.MethodPut, p, map[string]any{"set": set}); err != nil {
@@ -384,6 +422,14 @@ func (r *containerServiceResource) Create(ctx context.Context, req resource.Crea
 	m.ID = types.StringValue(fmt.Sprintf("%d/%s", sid(m.ServiceID), m.Name.ValueString()))
 	if err := r.syncSecrets(ctx, &m, map[string]string{}); err != nil {
 		resp.Diagnostics.AddError("Setting secrets failed", err.Error())
+	}
+	m.SecretsWOKey = types.ListValueMust(types.StringType, []attr.Value{})
+	if !m.SecretsWOVer.IsNull() {
+		wo, d := woSecrets(ctx, req.Config)
+		resp.Diagnostics.Append(d...)
+		if err := r.pushWO(ctx, &m, wo, nil); err != nil {
+			resp.Diagnostics.AddError("Setting secrets_wo failed", err.Error())
+		}
 	}
 	if err := r.syncDomains(ctx, &m, nil); err != nil {
 		resp.Diagnostics.AddError("Adding domains failed", err.Error())
@@ -449,7 +495,21 @@ func (r *containerServiceResource) Update(ctx context.Context, req resource.Upda
 			return
 		}
 	}
-	if err := r.syncSecrets(ctx, &m, ctrMap(ctx, st.Secrets)); err != nil {
+	var wo map[string]string
+	m.SecretsWOKey = st.SecretsWOKey
+	if m.SecretsWOKey.IsNull() || m.SecretsWOKey.IsUnknown() {
+		m.SecretsWOKey = types.ListValueMust(types.StringType, []attr.Value{})
+	}
+	if !m.SecretsWOVer.Equal(st.SecretsWOVer) { // version changed (or added / removed): send secrets_wo again
+		var d diagFromConfig
+		wo, d = woSecrets(ctx, req.Config)
+		resp.Diagnostics.Append(d...)
+		if err := r.pushWO(ctx, &m, wo, ctrList(ctx, st.SecretsWOKey)); err != nil {
+			resp.Diagnostics.AddError("Updating secrets_wo failed", err.Error())
+			return
+		}
+	}
+	if err := r.syncSecrets(ctx, &m, ctrMap(ctx, st.Secrets), wo); err != nil {
 		resp.Diagnostics.AddError("Updating secrets failed", err.Error())
 		return
 	}
@@ -486,4 +546,68 @@ func (r *containerServiceResource) ImportState(ctx context.Context, req resource
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("service_id"), n)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("name"), strings.ToLower(p[1]))...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), req.ID)...)
+}
+
+type diagFromConfig = diag.Diagnostics
+
+// woSecrets reads the write-only secrets_wo map from the configuration (never from plan/state, where it is always null).
+func woSecrets(ctx context.Context, cfg tfsdk.Config) (map[string]string, diag.Diagnostics) {
+	var mv types.Map
+	d := cfg.GetAttribute(ctx, path.Root("secrets_wo"), &mv)
+	out := map[string]string{}
+	if mv.IsNull() || mv.IsUnknown() {
+		return out, d
+	}
+	d.Append(mv.ElementsAs(ctx, &out, false)...)
+	return out, d
+}
+
+// pushWO sends every secrets_wo value (values cannot be compared: nothing is kept) and deletes keys sent last time that are gone now.
+func (r *containerServiceResource) pushWO(ctx context.Context, m *containerServiceModel, wo map[string]string, oldKeys []string) error {
+	set := map[string]any{}
+	keys := make([]string, 0, len(wo))
+	for k, v := range wo {
+		set[k] = v
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	del := []string{}
+	for _, k := range oldKeys {
+		if _, ok := wo[k]; !ok {
+			del = append(del, k)
+		}
+	}
+	if err := r.writeSecrets(ctx, m, set, del); err != nil {
+		return err
+	}
+	vals := make([]attr.Value, 0, len(keys))
+	for _, k := range keys {
+		vals = append(vals, types.StringValue(k))
+	}
+	m.SecretsWOKey = types.ListValueMust(types.StringType, vals)
+	return nil
+}
+
+// woKeys: secrets_wo_keys keeps its state value unless secrets_wo_version changes (then it is known only after apply).
+type woKeys struct{}
+
+func (woKeys) Description(context.Context) string { return "changes only with secrets_wo_version" }
+func (woKeys) MarkdownDescription(context.Context) string {
+	return "changes only with secrets_wo_version"
+}
+func (woKeys) PlanModifyList(ctx context.Context, req planmodifier.ListRequest, resp *planmodifier.ListResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+	var pv, sv types.Int64
+	req.Plan.GetAttribute(ctx, path.Root("secrets_wo_version"), &pv)
+	req.State.GetAttribute(ctx, path.Root("secrets_wo_version"), &sv)
+	if !pv.Equal(sv) {
+		return // unknown until apply
+	}
+	if req.StateValue.IsNull() {
+		resp.PlanValue = types.ListValueMust(types.StringType, []attr.Value{})
+		return
+	}
+	resp.PlanValue = req.StateValue
 }

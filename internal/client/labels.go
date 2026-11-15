@@ -35,3 +35,13 @@ func (c *Client) SetServiceLabel(ctx context.Context, serviceID int64, nickname 
 	_, err := c.Do(ctx, http.MethodPut, fmt.Sprintf("cloud/services/%d/label", serviceID), nil, map[string]any{"nickname": nickname, "tags": tags}, "", &l)
 	return &l, err
 }
+
+// SetServiceLabelTags replaces only the tags; the nickname is not sent and stays as it is (#3462).
+func (c *Client) SetServiceLabelTags(ctx context.Context, serviceID int64, tags []LabelTag) (*ServiceLabel, error) {
+	if tags == nil {
+		tags = []LabelTag{}
+	}
+	var l ServiceLabel
+	_, err := c.Do(ctx, http.MethodPut, fmt.Sprintf("cloud/services/%d/label", serviceID), nil, map[string]any{"tags": tags}, "", &l)
+	return &l, err
+}

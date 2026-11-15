@@ -82,6 +82,8 @@ type vpcPFView struct {
 	TargetPort int64  `json:"target_port"`
 	// SourceCIDRs (API 2.34.0): allowed source networks; empty = everyone
 	SourceCIDRs []string `json:"source_cidrs"`
+	// Name (API 2.39.0, #3462): label of the forward; empty = no name
+	Name string `json:"name"`
 }
 
 type vpcGatewayView struct {
@@ -262,6 +264,8 @@ type vpcModel struct {
 	Region          types.String `tfsdk:"region"`
 	GatewayPublicIP types.String `tfsdk:"gateway_public_ip"`
 	DefaultSubnetID types.String `tfsdk:"default_subnet_id"`
+	FirstSubnetName types.String `tfsdk:"first_subnet_name"`
+	FirstSubnetCIDR types.String `tfsdk:"first_subnet_cidr"`
 }
 
 func (r *vpcResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -271,7 +275,8 @@ func (r *vpcResource) Metadata(_ context.Context, req resource.MetadataRequest, 
 func (r *vpcResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "A private network (VPC) for Gyro Cloud Istanbul (tr-ist-1) servers. The VPC, its subnets and private traffic are free. " +
-			"Creating a VPC also creates its first subnet (\"default\", a /24 inside cidr) - its id is default_subnet_id; add more with gyro_subnet " +
+			"Creating a VPC also creates its first subnet (by default \"default\", the first /24 inside cidr; set first_subnet_name / first_subnet_cidr to choose) - " +
+			"its id is default_subnet_id; add more with gyro_subnet " +
 			"(up to 4 per VPC by default). Servers join with gyro_server_nic. Default limit: 3 VPCs per account (raisable with a support ticket). " +
 			"Destroy needs the VPC to be empty: remove its gyro_server_nic and gyro_port_forward resources first (Terraform does this when they reference the VPC).",
 		Attributes: map[string]schema.Attribute{
@@ -287,7 +292,8 @@ func (r *vpcResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 			"gateway_enabled": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false),
 				Description: "Turn on the VPC gateway (NAT): a public IPv4 (gateway_public_ip) through which servers without a public IP reach the internet, " +
 					"plus port forwarding (gyro_port_forward). The gateway has hourly prepaid billing from the account balance while enabled: " +
-					"4.99 EUR/month cap (672 hours), at least 1 hour each time it is turned on. Outgoing connections through the gateway are logged as required by law."},
+					"4.99 EUR/month cap (672 hours), at least 1 hour each time it is turned on. The account needs at least one prepaid Gyro Cloud Istanbul server first " +
+					"(in the same configuration add depends_on = [gyro_server.<name>]). Outgoing connections through the gateway are logged as required by law."},
 			"gateway_nat": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true),
 				Description: "Source NAT for internet access through the gateway (default true). false = the gateway only forwards ports."},
 			"inter_subnet": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("allow"),
@@ -296,6 +302,12 @@ func (r *vpcResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 			"region":            schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "Always tr-ist-1."},
 			"gateway_public_ip": schema.StringAttribute{Computed: true, Description: "Public IPv4 of the gateway while it is enabled (empty when off)."},
 			"default_subnet_id": schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "Id of the subnet created with the VPC (\"default\")."},
+			"first_subnet_name": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{createOnly{}},
+				Validators:  []validator.String{stringvalidator.LengthBetween(1, 48)},
+				Description: "Name of the first subnet, used only when the VPC is created (default \"default\"). Changing it later does nothing (rename or add subnets with gyro_subnet); it is read back from the VPC on import."},
+			"first_subnet_cidr": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{createOnly{}},
+				Validators:  []validator.String{canonicalCIDR{}},
+				Description: "Range of the first subnet inside cidr (e.g. 10.20.1.0/24, /20 to /28), used only when the VPC is created (default: the first /24 of cidr). Changing it later does nothing."},
 		},
 	}
 }
@@ -332,6 +344,21 @@ func (r *vpcResource) fill(m *vpcModel, v *vpcView) {
 	if !keepDefault {
 		m.DefaultSubnetID = types.StringValue(defaultSubnet(v))
 	}
+	// first_subnet_*: create-only; filled from the first subnet when unknown/null (create, import), otherwise kept as configured
+	if m.FirstSubnetName.IsNull() || m.FirstSubnetName.IsUnknown() || m.FirstSubnetCIDR.IsNull() || m.FirstSubnetCIDR.IsUnknown() {
+		name, cidr := "", ""
+		for _, s := range v.Subnets {
+			if string(s.ID) == m.DefaultSubnetID.ValueString() {
+				name, cidr = s.Name, s.CIDR
+			}
+		}
+		if m.FirstSubnetName.IsNull() || m.FirstSubnetName.IsUnknown() {
+			m.FirstSubnetName = types.StringValue(name)
+		}
+		if m.FirstSubnetCIDR.IsNull() || m.FirstSubnetCIDR.IsUnknown() {
+			m.FirstSubnetCIDR = types.StringValue(cidr)
+		}
+	}
 }
 
 func (r *vpcResource) get(ctx context.Context, id string) (*vpcView, error) {
@@ -357,6 +384,16 @@ func (r *vpcResource) Create(ctx context.Context, req resource.CreateRequest, re
 	body := map[string]any{"name": m.Name.ValueString(), "cidr": m.CIDR.ValueString()}
 	if !m.ProjectID.IsNull() && !m.ProjectID.IsUnknown() {
 		body["project_id"] = m.ProjectID.ValueInt64()
+	}
+	sub := map[string]any{} // #3462 B6: first subnet name / range (API subnet.name / subnet.cidr)
+	if v := m.FirstSubnetName; !v.IsNull() && !v.IsUnknown() && v.ValueString() != "" {
+		sub["name"] = v.ValueString()
+	}
+	if v := m.FirstSubnetCIDR; !v.IsNull() && !v.IsUnknown() && v.ValueString() != "" {
+		sub["cidr"] = v.ValueString()
+	}
+	if len(sub) > 0 {
+		body["subnet"] = sub
 	}
 	var v vpcView
 	if _, err := r.pd.c.Do(ctx, http.MethodPost, "cloud/vpcs", nil, body, "", &v); err != nil {
@@ -882,6 +919,7 @@ type portForwardModel struct {
 	TargetPort types.Int64  `tfsdk:"target_port"`
 	ForwardID  types.String `tfsdk:"forward_id"`
 	Sources    types.Set    `tfsdk:"source_cidrs"`
+	Name       types.String `tfsdk:"name"`
 }
 
 func (r *portForwardResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -891,7 +929,7 @@ func (r *portForwardResource) Metadata(_ context.Context, req resource.MetadataR
 func (r *portForwardResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Forwards a port of the VPC gateway's public IP (gyro_vpc.gateway_public_ip) to a private address in the VPC. " +
-			"Needs gateway_enabled = true on the gyro_vpc. Up to 20 per VPC by default. Every attribute except source_cidrs is ForceNew.",
+			"Needs gateway_enabled = true on the gyro_vpc. Up to 20 per VPC by default. Every attribute except source_cidrs and name is ForceNew.",
 		Attributes: map[string]schema.Attribute{
 			"id":     schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "<vpc_id>/<forward_id>"},
 			"vpc_id": schema.StringAttribute{Required: true, PlanModifiers: replaceS, Description: "gyro_vpc id."},
@@ -908,6 +946,9 @@ func (r *portForwardResource) Schema(_ context.Context, _ resource.SchemaRequest
 				Default:     setdefault.StaticValue(types.SetValueMust(types.StringType, []attr.Value{})),
 				Validators:  []validator.Set{setvalidator.SizeAtMost(20), setvalidator.ValueStringsAre(sourceCIDR{})},
 				Description: "Only these public IPv4 networks may use the forward (CIDR, a single address is /32, at most 20). Empty or left out = everyone. Updated in place."},
+			"name": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""),
+				Validators:  []validator.String{stringvalidator.LengthAtMost(64), noControlChars{}},
+				Description: "Label of the forward (at most 64 characters; empty = no name). Only a label: changing it renames in place and does not touch the gateway. Gyro Public API 2.39.0+."},
 		},
 	}
 }
@@ -928,6 +969,7 @@ func (r *portForwardResource) fill(m *portForwardModel, p *vpcPFView) {
 		src = append(src, types.StringValue(c))
 	}
 	m.Sources = types.SetValueMust(types.StringType, src)
+	m.Name = types.StringValue(p.Name)
 }
 
 func pfSources(ctx context.Context, m *portForwardModel) []string {
@@ -948,6 +990,9 @@ func (r *portForwardResource) Create(ctx context.Context, req resource.CreateReq
 		"target_ip": m.TargetIP.ValueString(), "target_port": m.TargetPort.ValueInt64()}
 	if l := pfSources(ctx, &m); len(l) > 0 {
 		body["source_cidrs"] = l
+	}
+	if n := m.Name.ValueString(); n != "" {
+		body["name"] = n
 	}
 	var p vpcPFView
 	if _, err := r.pd.c.Do(ctx, http.MethodPost, vpcPath(m.VPCID.ValueString(), "port-forwards"), nil, body, "", &p); err != nil {
@@ -990,24 +1035,34 @@ func (r *portForwardResource) Read(ctx context.Context, req resource.ReadRequest
 	resp.State.RemoveResource(ctx)
 }
 
-// Update: only source_cidrs changes in place (PATCH, API 2.34.0); everything else is ForceNew.
+// Update: source_cidrs (API 2.34.0) and name (API 2.39.0) change in place with one PATCH (only the changed fields are sent);
+// everything else is ForceNew.
 func (r *portForwardResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var m portForwardModel
+	var m, st portForwardModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &m)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &st)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	body := map[string]any{}
+	if !m.Sources.Equal(st.Sources) {
+		body["source_cidrs"] = pfSources(ctx, &m)
+	}
+	if m.Name.ValueString() != st.Name.ValueString() {
+		body["name"] = m.Name.ValueString()
+	}
 	var p vpcPFView
-	_, err := r.pd.c.Do(ctx, http.MethodPatch, vpcPath(m.VPCID.ValueString(), "port-forwards", url.PathEscape(m.ForwardID.ValueString())), nil,
-		map[string]any{"source_cidrs": pfSources(ctx, &m)}, "", &p)
-	if err != nil {
-		resp.Diagnostics.AddError("Changing the port forward sources failed", vpcErr(err))
-		return
+	if len(body) > 0 {
+		_, err := r.pd.c.Do(ctx, http.MethodPatch, vpcPath(m.VPCID.ValueString(), "port-forwards", url.PathEscape(m.ForwardID.ValueString())), nil, body, "", &p)
+		if err != nil {
+			resp.Diagnostics.AddError("Changing the port forward failed", vpcErr(err))
+			return
+		}
 	}
 	if p.ID == "" {
 		p.ID = apiID(m.ForwardID.ValueString())
 		p.Protocol, p.PublicPort, p.TargetIP, p.TargetPort = m.Protocol.ValueString(), m.PublicPort.ValueInt64(), m.TargetIP.ValueString(), m.TargetPort.ValueInt64()
-		p.SourceCIDRs = pfSources(ctx, &m)
+		p.SourceCIDRs, p.Name = pfSources(ctx, &m), m.Name.ValueString()
 	}
 	r.fill(&m, &p)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
@@ -1033,4 +1088,55 @@ func (r *portForwardResource) ImportState(ctx context.Context, req resource.Impo
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("vpc_id"), v)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("forward_id"), p)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), req.ID)...)
+}
+
+// createOnly (#3462): the value is used when the resource is created; afterwards the planned value is the state value,
+// so a later change in configuration is a no-op instead of a diff or a replacement.
+type createOnly struct{}
+
+func (createOnly) Description(context.Context) string { return "used only on create" }
+func (createOnly) MarkdownDescription(context.Context) string {
+	return "used only on create"
+}
+func (createOnly) PlanModifyString(_ context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	if req.State.Raw.IsNull() { // create
+		return
+	}
+	if !req.StateValue.IsNull() && !req.StateValue.IsUnknown() {
+		resp.PlanValue = req.StateValue
+	}
+}
+
+// noControlChars rejects control characters (tab, newline, ...) in a label.
+type noControlChars struct{}
+
+func (noControlChars) Description(context.Context) string         { return "no control characters" }
+func (noControlChars) MarkdownDescription(context.Context) string { return "no control characters" }
+func (noControlChars) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	for _, r := range req.ConfigValue.ValueString() {
+		if r < 0x20 || r == 0x7f {
+			resp.Diagnostics.AddAttributeError(req.Path, "Invalid name", "Control characters (tab, new line, ...) are not allowed.")
+			return
+		}
+	}
+}
+
+// ModifyPlan (#3462): when only the create-only first_subnet_* arguments changed, the plan is the state (no in-place update shown).
+func (r *vpcResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+	var p, s vpcModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &p)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &s)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if p.Name.Equal(s.Name) && p.CIDR.Equal(s.CIDR) && (p.ProjectID.IsUnknown() || p.ProjectID.Equal(s.ProjectID)) &&
+		p.GatewayEnabled.Equal(s.GatewayEnabled) && p.GatewayNAT.Equal(s.GatewayNAT) && p.InterSubnet.Equal(s.InterSubnet) {
+		resp.Diagnostics.Append(resp.Plan.Set(ctx, &s)...)
+	}
 }

@@ -37,7 +37,7 @@ output "mount_command" {
 ### Optional
 
 - `mount_point` (String) Absolute path under /mnt, /srv, /data, /media, /opt, /home or /var/www; default /mnt/<bucket>. Must be empty or missing on the server.
-- `accept_versioning` (Boolean) Protected Storage read/write only: confirms that every write/overwrite creates a new version, deletes only add a delete marker, locked files cannot be deleted and used space/cost grow (required for read_only = false on Protected Storage).
+- `accept_versioning` (Boolean) Protected Storage read/write only: confirms that every write/overwrite creates a new version, deletes only add a delete marker, locked files cannot be deleted and used space/cost grow (required for read_only = false on Protected Storage). Read back from the mount: true for a read/write Protected Storage mount (also after import).
 - `read_only` (Boolean) Default: false on Object Storage, true on Protected Storage (API 2.20.0).
 
 ### Read-Only

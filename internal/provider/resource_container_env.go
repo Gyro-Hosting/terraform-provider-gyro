@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -79,7 +80,8 @@ func (r *containerEnvResource) Schema(_ context.Context, _ resource.SchemaReques
 			"plan": schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{noChangeString{"plan"}},
 				Validators:  []validator.String{stringvalidator.RegexMatches(regexpCtrPlan, "a plan from GET /cloud/containers/plans, e.g. mini-1-1, pro or serverless")},
 				Description: "mini-1-1 | small-1-2 | starter | standart | pro | serverless. A plan change is done in the panel; Terraform refuses it (it never deletes the environment for it)."},
-			"name": schema.StringAttribute{Optional: true, Validators: []validator.String{stringvalidator.LengthAtMost(60)}, Description: "Environment name (nickname). Changes in place."},
+			"name": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				Validators: []validator.String{stringvalidator.LengthAtMost(60)}, Description: "Environment name (nickname). Changes in place; when not set, the name on the platform is kept (#3462)."},
 			"extra_nodes": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(0), Validators: []validator.Int64{int64validator.Between(0, 19)},
 				Description: "Extra nodes on top of the plan (0 = plan only). Billed hourly at the plan's node price. Not for serverless."},
 			"egress_approval_hours": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(0), Validators: []validator.Int64{int64validator.Between(0, 72)},
@@ -106,6 +108,44 @@ func (r *containerEnvResource) status(ctx context.Context, id int64) (string, st
 	}
 	_, err := r.pd.c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/services/%d", id), nil, nil, "", &s)
 	return s.Status, s.Nickname, err
+}
+
+// planOf: plan code of the environment's product (GET /cloud/containers/plans: id = product id); "" when unknown (#3462: import left plan empty).
+func (r *containerEnvResource) planOf(ctx context.Context, id int64) string {
+	var sv struct {
+		ProductID int64 `json:"product_id"`
+	}
+	if _, err := r.pd.c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/services/%d", id), nil, nil, "", &sv); err != nil || sv.ProductID == 0 {
+		return ""
+	}
+	product := sv.ProductID
+	var l []struct {
+		ID   int64  `json:"id"`
+		Plan string `json:"plan"`
+	}
+	if _, err := r.pd.c.Do(ctx, http.MethodGet, "cloud/containers/plans", nil, nil, "", &l); err != nil {
+		var w struct {
+			Plans []struct {
+				ID   int64  `json:"id"`
+				Plan string `json:"plan"`
+			} `json:"plans"`
+		}
+		if _, err := r.pd.c.Do(ctx, http.MethodGet, "cloud/containers/plans", nil, nil, "", &w); err != nil {
+			return ""
+		}
+		for _, p := range w.Plans {
+			if p.ID == product {
+				return p.Plan
+			}
+		}
+		return ""
+	}
+	for _, p := range l {
+		if p.ID == product {
+			return p.Plan
+		}
+	}
+	return ""
 }
 
 func (r *containerEnvResource) detail(ctx context.Context, id int64) (*containerEnvDetail, error) {
@@ -215,6 +255,12 @@ func (r *containerEnvResource) Create(ctx context.Context, req resource.CreateRe
 	want := m
 	r.apply(ctx, &m, d)
 	m.ExtraNodes, m.EgressApprovalH = want.ExtraNodes, want.EgressApprovalH
+	if m.Name.IsUnknown() || m.Name.IsNull() { // name not configured: the platform's (default nickname)
+		m.Name = types.StringValue("")
+		if _, nick, err := r.status(ctx, id); err == nil {
+			m.Name = types.StringValue(nick)
+		}
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
 
@@ -232,8 +278,11 @@ func (r *containerEnvResource) Read(ctx context.Context, req resource.ReadReques
 		return
 	}
 	m.ServiceID = types.Int64Value(id)
-	if !m.Name.IsNull() || nick != "" {
-		m.Name = types.StringValue(nick)
+	m.Name = types.StringValue(nick)
+	if m.Plan.IsNull() || m.Plan.ValueString() == "" { // imported: the plan comes from the product of the service
+		if p := r.planOf(ctx, id); p != "" {
+			m.Plan = types.StringValue(p)
+		}
 	}
 	if st == "active" {
 		if d, err := r.detail(ctx, id); err == nil {
@@ -252,7 +301,9 @@ func (r *containerEnvResource) Update(ctx context.Context, req resource.UpdateRe
 	}
 	m.ID, m.ServiceID = st.ID, st.ServiceID
 	id, _ := strconv.ParseInt(st.ID.ValueString(), 10, 64)
-	if m.Name.ValueString() != st.Name.ValueString() {
+	var cfg containerEnvResModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if !cfg.Name.IsNull() && !cfg.Name.IsUnknown() && m.Name.ValueString() != st.Name.ValueString() { // #3462: no name in the config = keep the platform's
 		if _, err := r.pd.c.Do(ctx, http.MethodPut, fmt.Sprintf("cloud/services/%d/label", id), nil, map[string]any{"nickname": m.Name.ValueString()}, "", nil); err != nil {
 			resp.Diagnostics.AddError("Renaming the container environment failed", err.Error())
 			return
@@ -275,6 +326,9 @@ func (r *containerEnvResource) Update(ctx context.Context, req resource.UpdateRe
 		r.apply(ctx, &m, d)
 	}
 	m.ExtraNodes, m.EgressApprovalH, m.Name = want.ExtraNodes, want.EgressApprovalH, want.Name
+	if m.Name.IsUnknown() || m.Name.IsNull() {
+		m.Name = st.Name
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
 

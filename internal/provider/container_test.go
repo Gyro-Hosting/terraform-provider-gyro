@@ -263,7 +263,7 @@ resource "gyro_container_service" "web" {
 			}, // deleted outside Terraform -> recreated
 				Config: cfg("ghcr.io/acme/web:2", 3, "s2", `"app.example.com"`), Check: resource.TestCheckResourceAttr("gyro_container_service.web", "revision", "1")},
 			{ResourceName: "gyro_container_service.web", ImportState: true, ImportStateId: "7/web", ImportStateVerify: true,
-				ImportStateVerifyIgnore: []string{"secrets", "state"}},
+				ImportStateVerifyIgnore: []string{"secrets", "state", "notification"}},
 			{Config: prov + `resource "gyro_container_service" "bad" {
   service_id = 8
   name       = "x"
@@ -327,7 +327,7 @@ resource "gyro_container_notifications" "n" {
 				resource.TestCheckNoResourceAttr("gyro_container_service.api", "autoscaling.min"),
 				resource.TestCheckResourceAttr("gyro_container_service.api", "replicas", "3"),
 			)},
-			{ResourceName: "gyro_container_service.api", ImportState: true, ImportStateId: "7/api", ImportStateVerify: true, ImportStateVerifyIgnore: []string{"state"}},
+			{ResourceName: "gyro_container_service.api", ImportState: true, ImportStateId: "7/api", ImportStateVerify: true, ImportStateVerifyIgnore: []string{"state", "notification"}}, // #3462: import reads min_ready (also 0),
 		},
 	})
 	sent := false

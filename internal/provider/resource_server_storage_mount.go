@@ -11,7 +11,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -84,7 +83,7 @@ func (r *storageMountResource) Schema(_ context.Context, _ resource.SchemaReques
 				Description: "Absolute path under /mnt, /srv, /data, /media, /opt, /home or /var/www; default /mnt/<bucket>. Must be empty or missing on the server."},
 			"read_only": schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: replBK,
 				Description: "Default: false on Object Storage, true on Protected Storage (API 2.20.0)."},
-			"accept_versioning": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false),
+			"accept_versioning": schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 				Description: "Protected Storage read/write only: confirms that every write/overwrite creates a new version, deletes only add a delete marker, " +
 					"locked files cannot be deleted and used space/cost grow (required for read_only = false on Protected Storage)."},
 			"protected": schema.BoolAttribute{Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
@@ -115,9 +114,8 @@ func (r *storageMountResource) set(m *storageMountModel, x *storageMount, withCm
 	m.MountPoint = types.StringValue(x.MountPoint)
 	m.ReadOnly = types.BoolValue(x.ReadOnly)
 	m.Protected = types.BoolValue(x.Protected)
-	if m.AcceptVer.IsNull() || m.AcceptVer.IsUnknown() {
-		m.AcceptVer = types.BoolValue(false)
-	}
+	// #3462: a read/write Protected Storage mount exists only with accept_versioning (also when imported)
+	m.AcceptVer = types.BoolValue(x.Protected && !x.ReadOnly)
 	m.MountID = types.Int64Value(x.ID)
 	m.Name = types.StringValue(x.Name)
 	m.State = types.StringValue(x.State)

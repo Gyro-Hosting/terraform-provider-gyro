@@ -1,3 +1,14 @@
+## 0.34.1 (2026-11-15)
+
+BUG FIXES (#3462):
+* `gyro_container_environment`, `gyro_storage`: without `name` in the configuration an update sent an empty nickname and cleared the name set in
+  the panel. `name` is now Optional + Computed: when it is not configured the platform's name is kept (and read into the state).
+* `gyro_container_environment`: after `terraform import` the `plan` was empty, so every plan showed `+ plan = "..."`. Read fills it from the
+  product of the environment (`GET /cloud/containers/plans`).
+* `gyro_server_storage_mount`: an imported read/write Protected Storage mount read `accept_versioning = false`, so `accept_versioning = true` in the
+  configuration planned a replacement. It is now read from the mount (`true` for read/write Protected Storage).
+* `gyro_container_service`: `notification = { min_ready = 0 }` was not read back after import (permanent diff). The 0 is read too.
+
 ## 0.34.0 (2026-11-15)
 
 FEATURES:

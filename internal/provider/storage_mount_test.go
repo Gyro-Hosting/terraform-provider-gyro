@@ -145,7 +145,7 @@ resource "gyro_server_storage_mount" "w" {
 				resource.TestMatchResourceAttr("gyro_server_storage_mount.m", "install_command", regexp.MustCompile(`^curl -fsSL `)),
 				resource.TestMatchResourceAttr("gyro_server_storage_mount.m", "id", regexp.MustCompile(`^17547/\d+$`)),
 			)},
-			{ResourceName: "gyro_server_storage_mount.w", ImportState: true, ImportStateVerify: true, ImportStateVerifyIgnore: []string{"install_command", "state", "accept_versioning"}},
+			{ResourceName: "gyro_server_storage_mount.w", ImportState: true, ImportStateVerify: true, ImportStateVerifyIgnore: []string{"install_command", "state"}},
 			// read_only change forces a new mount (old one removed)
 			{Config: cfg(true), Check: resource.ComposeAggregateTestCheckFunc(
 				resource.TestCheckResourceAttr("gyro_server_storage_mount.m", "read_only", "true"),
@@ -191,6 +191,16 @@ resource "gyro_server_storage_mount" "rw" {
 				resource.TestCheckResourceAttr("gyro_server_storage_mount.rw", "read_only", "false"),
 				resource.TestCheckResourceAttr("gyro_server_storage_mount.rw", "protected", "true"),
 			)},
+			// #3462: an imported read/write Protected mount reads accept_versioning = true (no replacement planned)
+			{ResourceName: "gyro_server_storage_mount.rw", ImportState: true, ImportStateVerify: true, ImportStateVerifyIgnore: []string{"install_command", "state"}},
+			{Config: prov + `
+resource "gyro_server_storage_mount" "rw" {
+  server_id          = 17547
+  storage_service_id = 17999
+  bucket             = "arsiv-ab12"
+  read_only          = false
+  accept_versioning  = true
+}`, PlanOnly: true},
 		},
 	})
 }

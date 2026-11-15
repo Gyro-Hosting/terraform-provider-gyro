@@ -39,7 +39,7 @@ resource "gyro_container_environment" "app" {
 - `plan` (String) mini-1-1 | small-1-2 | starter | standart | pro | serverless.
 
 ### Optional
-- `name` (String) Environment name (nickname, max 60). Changes in place.
+- `name` (String) Environment name (nickname, max 60). Changes in place; when not set, the name on the platform (panel) is kept.
 - `extra_nodes` (Number) Extra nodes on top of the plan, 0-19 (default 0). Not for serverless.
 - `egress_approval_hours` (Number) Approval window for egress IP changes, 0-72 hours (default 0 = off, 24 recommended).
 

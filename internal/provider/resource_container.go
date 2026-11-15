@@ -237,6 +237,7 @@ func (r *containerServiceResource) get(ctx context.Context, sid int64, name stri
 
 // apply copies the remote view into the model. Optional collections stay null when empty remotely and unset locally.
 func (r *containerServiceResource) apply(ctx context.Context, m *containerServiceModel, v *containerView) {
+	imported := m.Image.IsNull() || m.Image.ValueString() == "" // Read right after import: the state has only service_id / name
 	sp := v.Spec
 	m.ID = types.StringValue(fmt.Sprintf("%d/%s", sid(m.ServiceID), v.Name))
 	m.Name = types.StringValue(v.Name)
@@ -254,7 +255,7 @@ func (r *containerServiceResource) apply(ctx context.Context, m *containerServic
 		m.Replicas = types.Int64Value(sp.Replicas)
 		m.Autoscaling = nil
 	}
-	if sp.Alerts != nil && sp.Alerts.MinReady > 0 {
+	if sp.Alerts != nil && (sp.Alerts.MinReady > 0 || imported) { // #3462: min_ready = 0 is read back too (import left it null)
 		m.Notification = &containerNotification{MinReady: types.Int64Value(sp.Alerts.MinReady)}
 	} else if m.Notification != nil {
 		m.Notification = &containerNotification{MinReady: types.Int64Value(0)}

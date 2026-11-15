@@ -49,7 +49,7 @@ resource "gyro_storage_bucket" "dosyalar" {
 
 - `cycle` (String) Billing cycle: monthly (default), quarterly, semiannually, annually.
 - `delete_immediately` (Boolean) destroy cancels at once and deletes the data (default). false = file a cancellation request instead (the service keeps running until it is processed).
-- `name` (String) Service name (nickname, max 60). Changing it renames the service in place.
+- `name` (String) Service name (nickname, max 60). Changing it renames the service in place; when not set, the name on the platform (panel) is kept.
 - `object_lock_buckets` (Number) Protected plans only: object lock (WORM) bucket rights bought with the service (billed every cycle). Set at creation.
 
 ### Read-Only

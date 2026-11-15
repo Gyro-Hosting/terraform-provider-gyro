@@ -127,8 +127,9 @@ func (r *storageServiceResource) Schema(_ context.Context, _ resource.SchemaRequ
 			"cycle": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("monthly"), PlanModifiers: []planmodifier.String{noChangeString{"cycle"}},
 				Validators:  []validator.String{stringvalidator.OneOf("monthly", "quarterly", "semiannually", "annually")},
 				Description: "Billing cycle: monthly (default), quarterly, semiannually, annually."},
-			"name": schema.StringAttribute{Optional: true, Validators: []validator.String{stringvalidator.LengthAtMost(60)},
-				Description: "Service name (nickname, max 60). Changing it renames the service in place."},
+			"name": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				Validators:  []validator.String{stringvalidator.LengthAtMost(60)},
+				Description: "Service name (nickname, max 60). Changing it renames the service in place; when not set, the name on the platform is kept (#3462)."},
 			"object_lock_buckets": schema.Int64Attribute{Optional: true, PlanModifiers: []planmodifier.Int64{noChangeInt{"object_lock_buckets"}},
 				Validators:  []validator.Int64{int64validator.Between(1, 50)},
 				Description: "Protected plans only: object lock (WORM) bucket rights bought with the service (billed every cycle). Set at creation."},
@@ -178,9 +179,7 @@ func (r *storageServiceResource) apply(m *storageServiceModel, d *storageDetail)
 	m.IncludedTrafficGB = types.Int64Value(d.Storage.IncludedTraffic)
 	m.Endpoint = types.StringValue(d.Storage.Endpoint)
 	m.Region = types.StringValue(d.Storage.Region)
-	if !m.Name.IsNull() || d.Nickname != "" {
-		m.Name = types.StringValue(d.Nickname)
-	}
+	m.Name = types.StringValue(d.Nickname)
 }
 
 func (r *storageServiceResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -269,7 +268,9 @@ func (r *storageServiceResource) Update(ctx context.Context, req resource.Update
 	}
 	m.ID = st.ID
 	id, _ := strconv.ParseInt(st.ID.ValueString(), 10, 64)
-	if m.Name.ValueString() != st.Name.ValueString() {
+	var cfg storageServiceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if !cfg.Name.IsNull() && !cfg.Name.IsUnknown() && m.Name.ValueString() != st.Name.ValueString() { // #3462: no name in the config = keep the platform's
 		if _, err := r.pd.c.Do(ctx, http.MethodPut, fmt.Sprintf("cloud/services/%d/label", id), nil, map[string]any{"nickname": m.Name.ValueString()}, "", nil); err != nil {
 			resp.Diagnostics.AddError("Renaming the storage service failed", err.Error())
 			return

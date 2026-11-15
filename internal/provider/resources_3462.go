@@ -15,6 +15,7 @@ import (
 
 	"github.com/Gyro-Hosting/terraform-provider-gyro/internal/client"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -22,6 +23,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -666,5 +668,209 @@ func (r *registryPolicyResource) ImportState(ctx context.Context, req resource.I
 		return
 	}
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("service_id"), n)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), req.ID)...)
+}
+
+/* ================================================================== gyro_server_snapshot_schedule (#3462 madde 10, API 2.40.0) */
+
+type snapScheduleResource struct{ pd *providerData }
+
+func newSnapScheduleResource() resource.Resource { return &snapScheduleResource{} }
+
+type snapScheduleModel struct {
+	ID            types.String `tfsdk:"id"`
+	ServerID      types.Int64  `tfsdk:"server_id"`
+	Enabled       types.Bool   `tfsdk:"enabled"`
+	Frequency     types.String `tfsdk:"frequency"`
+	Weekday       types.String `tfsdk:"weekday"`
+	Hour          types.Int64  `tfsdk:"hour"`
+	Minute        types.Int64  `tfsdk:"minute"`
+	Keep          types.Int64  `tfsdk:"keep"`
+	SnapshotLimit types.Int64  `tfsdk:"snapshot_limit"`
+	NextRunAt     types.String `tfsdk:"next_run_at"`
+	LastRunAt     types.String `tfsdk:"last_run_at"`
+	LastStatus    types.String `tfsdk:"last_status"`
+	LastError     types.String `tfsdk:"last_error"`
+}
+
+type snapScheduleView struct {
+	Configured    bool    `json:"configured"`
+	Enabled       bool    `json:"enabled"`
+	Frequency     *string `json:"frequency"`
+	Weekday       *string `json:"weekday"`
+	Hour          *int64  `json:"hour"`
+	Minute        *int64  `json:"minute"`
+	Keep          *int64  `json:"keep"`
+	SnapshotLimit int64   `json:"snapshot_limit"`
+	NextRunAt     *string `json:"next_run_at"`
+	LastRunAt     *string `json:"last_run_at"`
+	LastStatus    *string `json:"last_status"`
+	LastError     *string `json:"last_error"`
+}
+
+var weekdays = []string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
+
+func (r *snapScheduleResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_server_snapshot_schedule"
+}
+
+func (r *snapScheduleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Description: "Scheduled snapshots of a Gyro Cloud Istanbul (tr-ist-1) server (GET|PUT|DELETE /cloud/servers/{id}/snapshot-schedule, Gyro Public API 2.40.0). " +
+			"Every day or every week at hour:minute Türkiye time a snapshot named auto-YYYYMMDD-HHMM is taken; the oldest automatic snapshots are deleted so at most " +
+			"`keep` stay. Manual snapshots are never deleted but count toward the server's snapshot limit (when it is full the run is skipped, see last_status). " +
+			"Snapshots above the free allowance of a prepaid server are billed hourly. While the server has snapshots an extra disk (gyro_server_disk) cannot be " +
+			"grown: set enabled = false and delete the snapshots first. Destroy removes the schedule; existing snapshots stay.",
+		Attributes: map[string]schema.Attribute{
+			"id":        schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "Same as server_id."},
+			"server_id": schema.Int64Attribute{Required: true, PlanModifiers: replaceI, Description: "Gyro Cloud Istanbul server id (gyro_server.id)."},
+			"enabled":   schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true), Description: "false pauses the schedule (kept)."},
+			"frequency": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("daily"),
+				Validators: []validator.String{stringvalidator.OneOf("daily", "weekly")}, Description: "daily (default) or weekly."},
+			"weekday": schema.StringAttribute{Optional: true, Computed: true, Validators: []validator.String{stringvalidator.OneOf(weekdays...)},
+				Description: "Day for frequency = weekly: sunday ... saturday (required then)."},
+			"hour": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(3), Validators: []validator.Int64{int64validator.Between(0, 23)},
+				Description: "Hour, Türkiye time (Europe/Istanbul), default 3."},
+			"minute": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(0), Validators: []validator.Int64{int64validator.Between(0, 59)},
+				Description: "Minute, default 0."},
+			"keep": schema.Int64Attribute{Optional: true, Computed: true, Default: int64default.StaticInt64(7), Validators: []validator.Int64{int64validator.Between(1, 20)},
+				Description: "Automatic snapshots to keep (1 to the server's snapshot limit, default 7)."},
+			"snapshot_limit": schema.Int64Attribute{Computed: true, Description: "The server's snapshot limit (manual + automatic)."},
+			"next_run_at":    schema.StringAttribute{Computed: true, Description: "Next run (RFC 3339, UTC) at the last read; empty when paused."},
+			"last_run_at":    schema.StringAttribute{Computed: true, Description: "Last run (RFC 3339, UTC) at the last read."},
+			"last_status":    schema.StringAttribute{Computed: true, Description: "queued (snapshot started) or skipped (see last_error) at the last read."},
+			"last_error":     schema.StringAttribute{Computed: true, Description: "Why the last run was skipped (e.g. snapshot_limit)."},
+		},
+	}
+}
+
+func (r *snapScheduleResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	r.pd = pdOf(req, resp)
+}
+
+func (r *snapScheduleResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var f, w types.String
+	req.Config.GetAttribute(ctx, path.Root("frequency"), &f)
+	req.Config.GetAttribute(ctx, path.Root("weekday"), &w)
+	if !f.IsUnknown() && f.ValueString() == "weekly" && w.IsNull() {
+		resp.Diagnostics.AddAttributeError(path.Root("weekday"), "weekday required", "Set weekday (sunday ... saturday) for frequency = \"weekly\".")
+	}
+	if !f.IsUnknown() && f.ValueString() != "weekly" && !w.IsNull() && !w.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(path.Root("weekday"), "weekday only for weekly", "weekday is used only with frequency = \"weekly\".")
+	}
+}
+
+func strOr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func (r *snapScheduleResource) fill(m *snapScheduleModel, v *snapScheduleView) {
+	m.ID = types.StringValue(strconv.FormatInt(m.ServerID.ValueInt64(), 10))
+	m.Enabled, m.Frequency = types.BoolValue(v.Enabled), types.StringValue(strOr(v.Frequency))
+	if v.Weekday != nil && *v.Weekday != "" {
+		m.Weekday = types.StringValue(*v.Weekday)
+	} else {
+		m.Weekday = types.StringNull()
+	}
+	if v.Hour != nil {
+		m.Hour = types.Int64Value(*v.Hour)
+	}
+	if v.Minute != nil {
+		m.Minute = types.Int64Value(*v.Minute)
+	}
+	if v.Keep != nil {
+		m.Keep = types.Int64Value(*v.Keep)
+	}
+	m.SnapshotLimit = types.Int64Value(v.SnapshotLimit)
+	m.NextRunAt, m.LastRunAt = types.StringValue(strOr(v.NextRunAt)), types.StringValue(strOr(v.LastRunAt))
+	m.LastStatus, m.LastError = types.StringValue(strOr(v.LastStatus)), types.StringValue(strOr(v.LastError))
+}
+
+func (r *snapScheduleResource) put(ctx context.Context, m *snapScheduleModel) error {
+	body := map[string]any{"enabled": m.Enabled.ValueBool(), "frequency": m.Frequency.ValueString(), "hour": m.Hour.ValueInt64(),
+		"minute": m.Minute.ValueInt64(), "keep": m.Keep.ValueInt64()}
+	if m.Frequency.ValueString() == "weekly" && !m.Weekday.IsNull() && !m.Weekday.IsUnknown() {
+		body["weekday"] = m.Weekday.ValueString()
+	}
+	var v snapScheduleView
+	if _, err := r.pd.c.Do(ctx, http.MethodPut, fmt.Sprintf("cloud/servers/%d/snapshot-schedule", m.ServerID.ValueInt64()), nil, body, "", &v); err != nil {
+		return err
+	}
+	r.fill(m, &v)
+	return nil
+}
+
+func (r *snapScheduleResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var m snapScheduleModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &m)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if err := r.put(ctx, &m); err != nil {
+		resp.Diagnostics.AddError("Setting the snapshot schedule failed", err.Error())
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
+}
+
+func (r *snapScheduleResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var m snapScheduleModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &m)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if m.ServerID.IsNull() {
+		n, _ := strconv.ParseInt(m.ID.ValueString(), 10, 64)
+		m.ServerID = types.Int64Value(n)
+	}
+	var v snapScheduleView
+	_, err := r.pd.c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/servers/%d/snapshot-schedule", m.ServerID.ValueInt64()), nil, nil, "", &v)
+	if client.IsNotFound(err) || (err == nil && !v.Configured) {
+		resp.State.RemoveResource(ctx)
+		return
+	}
+	if err != nil {
+		resp.Diagnostics.AddError("Reading the snapshot schedule failed", err.Error())
+		return
+	}
+	r.fill(&m, &v)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
+}
+
+func (r *snapScheduleResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var m snapScheduleModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &m)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if err := r.put(ctx, &m); err != nil {
+		resp.Diagnostics.AddError("Changing the snapshot schedule failed", err.Error())
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
+}
+
+func (r *snapScheduleResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var m snapScheduleModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &m)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	_, err := r.pd.c.Do(ctx, http.MethodDelete, fmt.Sprintf("cloud/servers/%d/snapshot-schedule", m.ServerID.ValueInt64()), nil, nil, "", nil)
+	if err != nil && !client.IsNotFound(err) {
+		resp.Diagnostics.AddError("Removing the snapshot schedule failed", err.Error())
+	}
+}
+
+func (r *snapScheduleResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	n, err := strconv.ParseInt(req.ID, 10, 64)
+	if err != nil || n < 1 {
+		resp.Diagnostics.AddError("Invalid import id", "Use the numeric server id.")
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("server_id"), n)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), req.ID)...)
 }

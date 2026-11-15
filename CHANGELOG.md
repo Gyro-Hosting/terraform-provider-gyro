@@ -1,3 +1,12 @@
+## 0.38.0 (2026-11-15)
+
+FEATURES:
+* **New resource `gyro_server_snapshot_schedule`** (Gyro Public API 2.40.0): automatic snapshots of a Gyro Cloud Istanbul (tr-ist-1) server -
+  `frequency` daily (default) or weekly (`weekday`), `hour` / `minute` in Türkiye time, `keep` the last N automatic snapshots (named
+  `auto-YYYYMMDD-HHMM`; manual snapshots are never deleted but count toward the server's snapshot limit), `enabled` to pause. Read-only
+  `snapshot_limit`, `next_run_at`, `last_run_at`, `last_status`, `last_error`. Destroy removes the schedule; snapshots stay. While a server has
+  snapshots its extra disks cannot be grown. Import: server id.
+
 ## 0.37.0 (2026-11-15)
 
 FEATURES:

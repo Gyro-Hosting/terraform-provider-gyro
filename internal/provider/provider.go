@@ -126,7 +126,8 @@ func (p *gyroProvider) Resources(_ context.Context) []func() resource.Resource {
 		newVPCResource, newSubnetResource, newServerNICResource, newPortForwardResource, // VPC, API 2.29.0 (v0.30.0)
 		newContainerVPCResource,                                                   // VPC V2, API 2.34.0 (v0.32.0)
 		newServerPublicIPResource,                                                 // v0.33.0
-		newServerAddonResource, newServerAgentResource, newRegistryPolicyResource} // #3462 tur 1, v0.37.0
+		newServerAddonResource, newServerAgentResource, newRegistryPolicyResource, // #3462 tur 1, v0.37.0
+		newSnapScheduleResource} // #3462 madde 10, v0.38.0
 }
 
 func (p *gyroProvider) DataSources(_ context.Context) []func() datasource.DataSource {

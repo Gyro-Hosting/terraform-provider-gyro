@@ -1,3 +1,10 @@
+## 0.33.0 (2026-11-15)
+
+FEATURES:
+* **New resource `gyro_server_public_ip`** (Gyro Public API 2.29.0+): turns the public IPv4 of a Gyro Cloud Istanbul (tr-ist-1) server off
+  (`enabled = false`, private-only server) or on, in place. Needs a ready `gyro_server_nic`; `allow_no_egress` allows it when the VPC gateway NAT
+  is off. Waits until the server applied the change. Destroy turns the public IP back on. Read-only `ip`, `private_ready`. Import: `<server id>`.
+
 ## 0.32.0 (2026-11-15)
 
 FEATURES:

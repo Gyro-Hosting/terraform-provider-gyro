@@ -1,3 +1,10 @@
+## 0.31.0 (2026-11-15)
+
+FEATURES:
+* **New resource `gyro_container_logs`** (Gyro Public API 2.33.0): log package of a Gyro Containers environment (`retention_days` 7 | 30 | 90 | 365,
+  `gb_month`; paid packages billed hourly from the prepaid balance, read-only `monthly_eur`) and its log alert rules (`rules`, at most 10:
+  `name`, `service`, `pattern`, `level`, `threshold`, `window_minutes`, `enabled`). Destroy = free package and no rules. Import: `<environment id>`.
+
 ## 0.30.0 (2026-11-15)
 
 FEATURES:

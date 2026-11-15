@@ -3,12 +3,12 @@
 page_title: "gyro_container_notifications Resource - gyro"
 subcategory: ""
 description: |-
-  Alert channels of a Gyro Containers (ECS) environment: e-mail, SMS, Telegram (chat id from the platform bot), signed webhook. Events: down, crashloop, replicas_low (per-service threshold: gyro_container_service.notification.min_ready), scale_max, capacity, egress (egress IPs changed). An event is announced after ~2 minutes, at most once per cooldown minutes per service and event, with a resolved message. Destroy = defaults (e-mail on, others off).
+  Alert channels of a Gyro Containers (ECS) environment: e-mail, SMS, Telegram (chat id from the platform bot), signed webhook. Events: down, crashloop, replicas_low (per-service threshold: gyro_container_service.notification.min_ready), scale_max, capacity, egress (egress IPs changed), job_failed (one-off job), log_rule / log_quota (log alerts), schedule_failed / schedule_missed (scheduled jobs). Without `events` the selection on the platform is kept. An event is announced after ~2 minutes, at most once per cooldown minutes per service and event, with a resolved message. Destroy = defaults (e-mail on, others off).
 ---
 
 # gyro_container_notifications (Resource)
 
-Alert channels of a Gyro Containers (ECS) environment: e-mail, SMS, Telegram (chat id from the platform bot), signed webhook. Events: down, crashloop, replicas_low (per-service threshold: gyro_container_service.notification.min_ready), scale_max, capacity, egress (egress IPs changed). An event is announced after ~2 minutes, at most once per `cooldown` minutes per service and event, with a resolved message. Destroy = defaults (e-mail on, others off).
+Alert channels of a Gyro Containers (ECS) environment: e-mail, SMS, Telegram (chat id from the platform bot), signed webhook. Events: down, crashloop, replicas_low (per-service threshold: gyro_container_service.notification.min_ready), scale_max, capacity, egress (egress IPs changed), job_failed (one-off job), log_rule / log_quota (log alerts), schedule_failed / schedule_missed (scheduled jobs). Without `events` the selection on the platform is kept. An event is announced after ~2 minutes, at most once per `cooldown` minutes per service and event, with a resolved message. Destroy = defaults (e-mail on, others off).
 
 ## Example Usage
 
@@ -20,7 +20,8 @@ resource "gyro_container_notifications" "alerts" {
   sms         = false
   telegram    = "123456789" # send /start to @gyrouptime_bot, it replies with your chat id
   webhook_url = "https://ops.example.com/gyro-alerts"
-  events      = ["down", "crashloop", "replicas_low", "scale_max", "capacity"]
+  # events: the FULL set to enable; omit it to keep the selection on the platform (all on by default)
+  events      = ["down", "crashloop", "replicas_low", "scale_max", "capacity", "egress", "job_failed", "schedule_failed", "schedule_missed"]
   cooldown    = 30
 }
 
@@ -42,7 +43,7 @@ output "webhook_secret" {
 
 - `cooldown` (Number) Minutes between two announcements of the same service + event (5-1440).
 - `email` (Boolean) Account e-mail.
-- `events` (Set of String) Enabled events (default all): down, crashloop, replicas_low, scale_max, capacity, egress (egress IPs of the environment changed).
+- `events` (Set of String) Enabled events (the FULL set; events not listed are turned off). Omit to keep the current selection on the platform (all on by default). Known events: down, crashloop, replicas_low, scale_max, capacity, egress, job_failed, log_rule, log_quota, schedule_failed, schedule_missed; the list is checked against the events the API offers.
 - `resolved` (Boolean) Send a resolved message.
 - `sms` (Boolean) Account phone (SMS).
 - `telegram` (String) Telegram chat id (send /start to the platform bot).

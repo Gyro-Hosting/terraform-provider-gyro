@@ -1,3 +1,18 @@
+## 0.34.0 (2026-11-15)
+
+FEATURES:
+* **New resource `gyro_container_schedule`** (Gyro Public API 2.36.0): scheduled job of a Gyro Containers environment. Timing `cron` (time zone
+  aware, `timezone` default Europe/Istanbul), `rate_minutes` or `at` (once); target a service command (`service` + `command`, run as a one-off job
+  with the running image, variables and secrets; `timeout_seconds`, `cpu_m`, `memory_mi`) or an HTTP call (`url`, `method`, sensitive `headers` /
+  `body`, `http_timeout_seconds`); `retries` 0-3, `paused`. Read-only `target`, `state`, `next_run`. Changed in place (only `environment_id` and
+  `name` replace it). Import: `<environment id>/<schedule name or id>` (header values cannot be read back).
+
+BUG FIXES:
+* `gyro_container_notifications` (#3461): the provider knew only 6 events and sent them on every change, so any change (e.g. `cooldown`) turned the
+  other events off on the platform (job_failed, log_rule, log_quota, schedule_*). Now `events` is read from the API (every event it returns),
+  is sent only when configured (omit it to keep the selection on the platform), is validated against the events the API offers, and destroy turns
+  every offered event back on.
+
 ## 0.33.0 (2026-11-15)
 
 FEATURES:

@@ -75,9 +75,17 @@ func (m *containerMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			ok(map[string]any{"status": "successful"})
 		case len(seg) == 2 && r.Method == "GET":
-			ev := map[string]int{}
-			for _, e := range strings.Split(fmt.Sprint(m.ntf["events"]), ",") {
-				ev[e] = 1
+			ev := map[string]int{} // like the API: every known event, 1 = on (all on until "events" was sent)
+			for _, e := range allNtfEvents {
+				ev[e] = 0
+				if m.ntf["events"] == nil {
+					ev[e] = 1
+				}
+			}
+			if m.ntf["events"] != nil {
+				for _, e := range strings.Split(fmt.Sprint(m.ntf["events"]), ",") {
+					ev[e] = 1
+				}
 			}
 			ok(map[string]any{"settings": map[string]any{"email": m.ntf["email"], "sms": m.ntf["sms"], "telegram": m.ntf["telegram"], "webhook_url": m.ntf["webhook_url"],
 				"events": ev, "cooldown": m.ntf["cooldown"], "resolved": m.ntf["resolved"], "webhook_secret_set": m.ntf["secret"] != ""}, "conditions": []any{}})

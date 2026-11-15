@@ -16,6 +16,7 @@ import (
 )
 
 // VPC V2 (API 2.34.0): container environment <-> VPC subnet, and port forward source_cidrs (PATCH in place).
+// API 2.38.0: the mock environment is serverless (charged 2.99 EUR/month): PUT without "confirm": true is refused like the API does.
 type cvMock struct {
 	mu     sync.Mutex
 	vpc    *vpcMock
@@ -44,9 +45,10 @@ func (x *cvMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a := x.att[env]
+	pricing := map[string]any{"charged": true, "billing": "prepaid_hourly", "monthly_eur": 2.99, "list_monthly_eur": 3.49, "minimum_hours": 1}
 	view := func() map[string]any {
 		if a == nil {
-			return map[string]any{"attached": false, "state": "off", "mode": "nodes", "supported": true, "status": "accepted", "tool": "ecs-vpc"}
+			return map[string]any{"attached": false, "state": "off", "mode": "serverless", "supported": true, "status": "accepted", "tool": "ecs-vpc", "pricing": pricing}
 		}
 		st := "attaching"
 		x.polls[env]++
@@ -62,7 +64,7 @@ func (x *cvMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			m := e.(map[string]any)
 			out = append(out, map[string]any{"service": m["service"], "port": m["port"], "address": fmt.Sprintf("10.10.0.16:%v", m["port"])})
 		}
-		return map[string]any{"attached": true, "state": st, "mode": "nodes", "supported": true, "vpc_id": a["vpc_id"], "subnet_id": a["subnet_id"],
+		return map[string]any{"attached": true, "state": st, "mode": "serverless", "supported": true, "pricing": pricing, "vpc_id": a["vpc_id"], "subnet_id": a["subnet_id"],
 			"vpc_cidr": "10.10.0.0/16", "subnet_cidr": "10.10.0.0/24", "subnet_gateway": "10.10.0.1", "source_range": "10.10.0.16/28", "endpoint_ip": "10.10.0.16",
 			"node_ips": []any{"10.10.0.17"}, "expose": out, "status": "accepted", "tool": "ecs-vpc"}
 	}
@@ -72,6 +74,10 @@ func (x *cvMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		if a != nil {
 			jsonErr(w, 422, "tool_action_failed", "already attached")
+			return
+		}
+		if body["confirm"] != true {
+			jsonErr(w, 422, "confirm_required", "Attaching a serverless container environment to a VPC is charged")
 			return
 		}
 		x.puts++
@@ -153,6 +159,7 @@ func TestAccMockContainerVPC(t *testing.T) {
 				resource.TestCheckResourceAttr("gyro_container_vpc_attachment.app", "source_range", "10.10.0.16/28"),
 				resource.TestCheckResourceAttr("gyro_container_vpc_attachment.app", "endpoint_ip", "10.10.0.16"),
 				resource.TestCheckResourceAttr("gyro_container_vpc_attachment.app", "node_ips.0", "10.10.0.17"),
+				resource.TestCheckResourceAttr("gyro_container_vpc_attachment.app", "monthly_price_eur", "2.99"),
 				resource.TestCheckResourceAttr("gyro_container_vpc_attachment.app", "expose.0.port", "8080"),
 				resource.TestCheckResourceAttr("gyro_port_forward.web", "source_cidrs.#", "0"),
 				func(s *terraform.State) error {

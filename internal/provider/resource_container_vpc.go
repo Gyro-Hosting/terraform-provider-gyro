@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/float64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -51,6 +53,7 @@ type containerVPCModel struct {
 	State         types.String              `tfsdk:"state"`
 	VPCCIDR       types.String              `tfsdk:"vpc_cidr"`
 	SubnetCIDR    types.String              `tfsdk:"subnet_cidr"`
+	MonthlyPrice  types.Float64             `tfsdk:"monthly_price_eur"`
 }
 
 type containerVPCView struct {
@@ -65,7 +68,11 @@ type containerVPCView struct {
 	EndpointIP  string   `json:"endpoint_ip"`
 	NodeIPs     []string `json:"node_ips"`
 	Error       string   `json:"error"`
-	Expose      []struct {
+	Pricing     *struct {
+		Charged    bool    `json:"charged"`
+		MonthlyEUR float64 `json:"monthly_eur"`
+	} `json:"pricing"`
+	Expose []struct {
 		Service string `json:"service"`
 		Port    int64  `json:"port"`
 	} `json:"expose"`
@@ -78,11 +85,14 @@ func (r *containerVPCResource) Metadata(_ context.Context, req resource.Metadata
 func (r *containerVPCResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	keepS := []planmodifier.String{stringplanmodifier.UseStateForUnknown()}
 	resp.Schema = schema.Schema{
-		Description: "Connects a node Gyro Containers (ECS) environment (Mini, Small, Starter, Standard, Pro) to one subnet of a gyro_vpc in tr-ist-1. " +
+		Description: "Connects a Gyro Containers (ECS) environment to one subnet of a gyro_vpc in tr-ist-1. " +
 			"The environment gets a fixed VPC source range (/28) inside the subnet: connections from the containers to the VPC servers come from it and it does not " +
 			"change when nodes are replaced, scaled or renewed. The first address is the VPC endpoint: VPC servers reach the published services (expose) at " +
-			"endpoint_ip:port; it is never reachable from the internet. Free. The subnet must be /26 or larger; an environment joins one subnet at a time. " +
-			"Serverless environments are not supported yet. Create waits for state ready, destroy waits until the attachment is gone. Import: <environment_id>.",
+			"endpoint_ip:port; it is never reachable from the internet. The subnet must be /26 or larger; an environment joins one subnet at a time. " +
+			"Price: free for node environments (Mini, Small, Starter, Standard, Pro). Serverless environments: a connector dedicated to the environment runs, so " +
+			"the connection is charged (2.99 EUR/month, billed hourly from the prepaid balance while attached, at least 1 hour per attachment; see monthly_price_eur); " +
+			"applying this resource accepts the charge, destroying it stops the charge. " +
+			"Create waits for state ready, destroy waits until the attachment is gone. Import: <environment_id>.",
 		Attributes: map[string]schema.Attribute{
 			"id":             schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "Same as environment_id."},
 			"environment_id": schema.Int64Attribute{Required: true, PlanModifiers: replaceI, Description: "Container environment (service) id (gyro_container_environment.id)."},
@@ -94,6 +104,8 @@ func (r *containerVPCResource) Schema(_ context.Context, _ resource.SchemaReques
 			"state":          schema.StringAttribute{Computed: true, Description: "off, attaching, ready, detaching, error."},
 			"vpc_cidr":       schema.StringAttribute{Computed: true, PlanModifiers: keepS, Description: "Range of the VPC."},
 			"subnet_cidr":    schema.StringAttribute{Computed: true, PlanModifiers: keepS, Description: "Range of the subnet."},
+			"monthly_price_eur": schema.Float64Attribute{Computed: true, PlanModifiers: []planmodifier.Float64{float64planmodifier.UseStateForUnknown()},
+				Description: "Monthly price of the connection in EUR (0 = free, node environments; serverless 2.99), billed hourly from the prepaid balance while attached."},
 		},
 		Blocks: map[string]schema.Block{
 			"expose": schema.ListNestedBlock{Validators: []validator.List{listvalidator.SizeAtMost(20)},
@@ -145,6 +157,10 @@ func (r *containerVPCResource) fill(m *containerVPCModel, v *containerVPCView) {
 		ips = append(ips, types.StringValue(ip))
 	}
 	m.NodeIPs = types.ListValueMust(types.StringType, ips)
+	m.MonthlyPrice = types.Float64Value(0)
+	if v.Pricing != nil && v.Pricing.Charged {
+		m.MonthlyPrice = types.Float64Value(math.Round(v.Pricing.MonthlyEUR*100) / 100)
+	}
 	ex := make([]containerVPCExposeModel, 0, len(v.Expose))
 	for _, x := range v.Expose {
 		ex = append(ex, containerVPCExposeModel{Service: types.StringValue(x.Service), Port: types.Int64Value(x.Port)})
@@ -190,7 +206,7 @@ func (r *containerVPCResource) wait(ctx context.Context, env int64, off bool) (*
 func cvErr(err error) string {
 	msg := err.Error()
 	if client.HasCode(err, "not_supported") || strings.Contains(strings.ToLower(msg), "serverless") {
-		msg += "\nOnly node environments (Mini, Small, Starter, Standard, Pro) can join a VPC for now."
+		msg += "\nThis environment cannot join a VPC yet."
 	}
 	return msg
 }
@@ -202,7 +218,8 @@ func (r *containerVPCResource) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 	env := m.EnvironmentID.ValueInt64()
-	body := map[string]any{"vpc_id": m.VPCID.ValueString(), "subnet_id": m.SubnetID.ValueString()}
+	// API 2.38.0: serverless environments are charged; applying the resource is the consent ("confirm": true, ignored for free ones)
+	body := map[string]any{"vpc_id": m.VPCID.ValueString(), "subnet_id": m.SubnetID.ValueString(), "confirm": true}
 	if len(m.Expose) > 0 {
 		body["expose"] = cvExposeBody(m.Expose)
 	}

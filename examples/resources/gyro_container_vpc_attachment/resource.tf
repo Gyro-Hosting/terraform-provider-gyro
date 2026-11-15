@@ -1,5 +1,7 @@
-# A node container environment inside the VPC: the containers reach the VPC servers from a fixed /28 (source_range),
-# and the VPC servers reach the published service at endpoint_ip:8080. Free; the subnet must be /26 or larger.
+# A container environment inside the VPC: the containers reach the VPC servers from a fixed /28 (source_range),
+# and the VPC servers reach the published service at endpoint_ip:8080. The subnet must be /26 or larger.
+# Free for node environments; for a serverless environment the connection costs 2.99 EUR/month, billed hourly while
+# attached (monthly_price_eur) - applying accepts the charge, destroying stops it.
 resource "gyro_container_vpc_attachment" "app" {
   environment_id = gyro_container_environment.gyro_proje.id
   vpc_id         = gyro_vpc.uretim.id

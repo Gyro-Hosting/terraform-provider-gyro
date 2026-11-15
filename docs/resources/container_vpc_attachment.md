@@ -3,18 +3,20 @@
 page_title: "gyro_container_vpc_attachment Resource - gyro"
 subcategory: ""
 description: |-
-  Connects a node Gyro Containers (ECS) environment (Mini, Small, Starter, Standard, Pro) to one subnet of a gyro_vpc in tr-ist-1. The environment gets a fixed VPC source range (/28) inside the subnet: connections from the containers to the VPC servers come from it and it does not change when nodes are replaced, scaled or renewed. The first address is the VPC endpoint: VPC servers reach the published services (expose) at endpoint_ip:port; it is never reachable from the internet. Free. The subnet must be /26 or larger; an environment joins one subnet at a time. Serverless environments are not supported yet. Create waits for state ready, destroy waits until the attachment is gone. Import: <environment_id>.
+  Connects a Gyro Containers (ECS) environment to one subnet of a gyro_vpc in tr-ist-1. The environment gets a fixed VPC source range (/28) inside the subnet: connections from the containers to the VPC servers come from it and it does not change when nodes are replaced, scaled or renewed. The first address is the VPC endpoint: VPC servers reach the published services (expose) at endpoint_ip:port; it is never reachable from the internet. The subnet must be /26 or larger; an environment joins one subnet at a time. Price: free for node environments (Mini, Small, Starter, Standard, Pro). Serverless environments: a connector dedicated to the environment runs, so the connection is charged (2.99 EUR/month, billed hourly from the prepaid balance while attached, at least 1 hour per attachment; see monthly_price_eur); applying this resource accepts the charge, destroying it stops the charge. Create waits for state ready, destroy waits until the attachment is gone. Import: <environment_id>.
 ---
 
 # gyro_container_vpc_attachment (Resource)
 
-Connects a node Gyro Containers (ECS) environment (Mini, Small, Starter, Standard, Pro) to one subnet of a gyro_vpc in tr-ist-1. The environment gets a fixed VPC source range (/28) inside the subnet: connections from the containers to the VPC servers come from it and it does not change when nodes are replaced, scaled or renewed. The first address is the VPC endpoint: VPC servers reach the published services (expose) at endpoint_ip:port; it is never reachable from the internet. Free. The subnet must be /26 or larger; an environment joins one subnet at a time. Serverless environments are not supported yet. Create waits for state ready, destroy waits until the attachment is gone. Import: <environment_id>.
+Connects a Gyro Containers (ECS) environment to one subnet of a gyro_vpc in tr-ist-1. The environment gets a fixed VPC source range (/28) inside the subnet: connections from the containers to the VPC servers come from it and it does not change when nodes are replaced, scaled or renewed. The first address is the VPC endpoint: VPC servers reach the published services (expose) at endpoint_ip:port; it is never reachable from the internet. The subnet must be /26 or larger; an environment joins one subnet at a time. Price: free for node environments (Mini, Small, Starter, Standard, Pro). Serverless environments: a connector dedicated to the environment runs, so the connection is charged (2.99 EUR/month, billed hourly from the prepaid balance while attached, at least 1 hour per attachment; see monthly_price_eur); applying this resource accepts the charge, destroying it stops the charge. Create waits for state ready, destroy waits until the attachment is gone. Import: <environment_id>.
 
 ## Example Usage
 
 ```terraform
-# A node container environment inside the VPC: the containers reach the VPC servers from a fixed /28 (source_range),
-# and the VPC servers reach the published service at endpoint_ip:8080. Free; the subnet must be /26 or larger.
+# A container environment inside the VPC: the containers reach the VPC servers from a fixed /28 (source_range),
+# and the VPC servers reach the published service at endpoint_ip:8080. The subnet must be /26 or larger.
+# Free for node environments; for a serverless environment the connection costs 2.99 EUR/month, billed hourly while
+# attached (monthly_price_eur) - applying accepts the charge, destroying stops it.
 resource "gyro_container_vpc_attachment" "app" {
   environment_id = gyro_container_environment.gyro_proje.id
   vpc_id         = gyro_vpc.uretim.id
@@ -53,6 +55,7 @@ output "api_from_the_vpc" {
 
 - `endpoint_ip` (String) First address of source_range; VPC servers reach the published services at endpoint_ip:port.
 - `id` (String) Same as environment_id.
+- `monthly_price_eur` (Number) Monthly price of the connection in EUR (0 = free, node environments; serverless 2.99), billed hourly from the prepaid balance while attached.
 - `node_ips` (List of String) Addresses of the ready nodes inside source_range (can change; the range does not).
 - `source_range` (String) Fixed /28: connections from the containers to the VPC come from here (allow it in your server firewalls).
 - `state` (String) off, attaching, ready, detaching, error.

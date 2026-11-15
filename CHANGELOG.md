@@ -1,3 +1,11 @@
+## 0.36.0 (2026-11-15)
+
+FEATURES:
+* `gyro_container_vpc_attachment` (Gyro Public API 2.38.0): serverless container environments can be attached too. Their VPC connection is
+  charged (a connector dedicated to the environment runs): 2.99 EUR/month, billed hourly from the prepaid balance while attached, at least 1 hour
+  per attachment; destroying the resource stops the charge. Applying the resource accepts the charge (the provider sends `confirm`). New
+  read-only `monthly_price_eur` (0 for node environments, which stay free).
+
 ## 0.35.0 (2026-11-15)
 
 FEATURES:

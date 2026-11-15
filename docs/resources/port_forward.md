@@ -3,12 +3,12 @@
 page_title: "gyro_port_forward Resource - gyro"
 subcategory: ""
 description: |-
-  Forwards a port of the VPC gateway's public IP (gyro_vpc.gateway_public_ip) to a private address in the VPC. Needs gateway_enabled = true on the gyro_vpc. Up to 20 per VPC by default. Every attribute is ForceNew.
+  Forwards a port of the VPC gateway's public IP (gyro_vpc.gateway_public_ip) to a private address in the VPC. Needs gateway_enabled = true on the gyro_vpc. Up to 20 per VPC by default. Every attribute except source_cidrs is ForceNew.
 ---
 
 # gyro_port_forward (Resource)
 
-Forwards a port of the VPC gateway's public IP (gyro_vpc.gateway_public_ip) to a private address in the VPC. Needs gateway_enabled = true on the gyro_vpc. Up to 20 per VPC by default. Every attribute is ForceNew.
+Forwards a port of the VPC gateway's public IP (gyro_vpc.gateway_public_ip) to a private address in the VPC. Needs gateway_enabled = true on the gyro_vpc. Up to 20 per VPC by default. Every attribute except source_cidrs is ForceNew.
 
 ## Example Usage
 
@@ -20,6 +20,16 @@ resource "gyro_port_forward" "https" {
   public_port = 443
   target_ip   = gyro_server_nic.web.ip
   target_port = 443
+}
+
+# SSH only from the office and the VPN (source allow list, changed in place; empty = everyone)
+resource "gyro_port_forward" "ssh" {
+  vpc_id       = gyro_vpc.uretim.id
+  protocol     = "tcp"
+  public_port  = 2222
+  target_ip    = gyro_server_nic.web.ip
+  target_port  = 22
+  source_cidrs = ["203.0.113.10/32", "198.51.100.0/24"]
 }
 ```
 
@@ -33,6 +43,10 @@ resource "gyro_port_forward" "https" {
 - `target_ip` (String) Private IPv4 of a server in the VPC (e.g. gyro_server_nic.ip).
 - `target_port` (Number) Port on the target server.
 - `vpc_id` (String) gyro_vpc id.
+
+### Optional
+
+- `source_cidrs` (Set of String) Only these public IPv4 networks may use the forward (CIDR, a single address is /32, at most 20). Empty or left out = everyone. Updated in place.
 
 ### Read-Only
 

@@ -13,13 +13,16 @@ import (
 
 	"github.com/Gyro-Hosting/terraform-provider-gyro/internal/client"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -77,6 +80,8 @@ type vpcPFView struct {
 	PublicPort int64  `json:"public_port"`
 	TargetIP   string `json:"target_ip"`
 	TargetPort int64  `json:"target_port"`
+	// SourceCIDRs (API 2.34.0): allowed source networks; empty = everyone
+	SourceCIDRs []string `json:"source_cidrs"`
 }
 
 type vpcGatewayView struct {
@@ -876,6 +881,7 @@ type portForwardModel struct {
 	TargetIP   types.String `tfsdk:"target_ip"`
 	TargetPort types.Int64  `tfsdk:"target_port"`
 	ForwardID  types.String `tfsdk:"forward_id"`
+	Sources    types.Set    `tfsdk:"source_cidrs"`
 }
 
 func (r *portForwardResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -885,7 +891,7 @@ func (r *portForwardResource) Metadata(_ context.Context, req resource.MetadataR
 func (r *portForwardResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Forwards a port of the VPC gateway's public IP (gyro_vpc.gateway_public_ip) to a private address in the VPC. " +
-			"Needs gateway_enabled = true on the gyro_vpc. Up to 20 per VPC by default. Every attribute is ForceNew.",
+			"Needs gateway_enabled = true on the gyro_vpc. Up to 20 per VPC by default. Every attribute except source_cidrs is ForceNew.",
 		Attributes: map[string]schema.Attribute{
 			"id":     schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "<vpc_id>/<forward_id>"},
 			"vpc_id": schema.StringAttribute{Required: true, PlanModifiers: replaceS, Description: "gyro_vpc id."},
@@ -898,6 +904,10 @@ func (r *portForwardResource) Schema(_ context.Context, _ resource.SchemaRequest
 			"target_port": schema.Int64Attribute{Required: true, PlanModifiers: replaceI, Validators: []validator.Int64{int64validator.Between(1, 65535)},
 				Description: "Port on the target server."},
 			"forward_id": schema.StringAttribute{Computed: true, PlanModifiers: keep, Description: "Port forward id."},
+			"source_cidrs": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType,
+				Default:     setdefault.StaticValue(types.SetValueMust(types.StringType, []attr.Value{})),
+				Validators:  []validator.Set{setvalidator.SizeAtMost(20), setvalidator.ValueStringsAre(sourceCIDR{})},
+				Description: "Only these public IPv4 networks may use the forward (CIDR, a single address is /32, at most 20). Empty or left out = everyone. Updated in place."},
 		},
 	}
 }
@@ -913,6 +923,19 @@ func (r *portForwardResource) fill(m *portForwardModel, p *vpcPFView) {
 	m.PublicPort = types.Int64Value(p.PublicPort)
 	m.TargetIP = types.StringValue(p.TargetIP)
 	m.TargetPort = types.Int64Value(p.TargetPort)
+	src := make([]attr.Value, 0, len(p.SourceCIDRs))
+	for _, c := range p.SourceCIDRs {
+		src = append(src, types.StringValue(c))
+	}
+	m.Sources = types.SetValueMust(types.StringType, src)
+}
+
+func pfSources(ctx context.Context, m *portForwardModel) []string {
+	out := []string{}
+	if !m.Sources.IsNull() && !m.Sources.IsUnknown() {
+		_ = m.Sources.ElementsAs(ctx, &out, false)
+	}
+	return out
 }
 
 func (r *portForwardResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -923,6 +946,9 @@ func (r *portForwardResource) Create(ctx context.Context, req resource.CreateReq
 	}
 	body := map[string]any{"protocol": m.Protocol.ValueString(), "public_port": m.PublicPort.ValueInt64(),
 		"target_ip": m.TargetIP.ValueString(), "target_port": m.TargetPort.ValueInt64()}
+	if l := pfSources(ctx, &m); len(l) > 0 {
+		body["source_cidrs"] = l
+	}
 	var p vpcPFView
 	if _, err := r.pd.c.Do(ctx, http.MethodPost, vpcPath(m.VPCID.ValueString(), "port-forwards"), nil, body, "", &p); err != nil {
 		resp.Diagnostics.AddError("Creating the port forward failed", vpcErr(err))
@@ -964,9 +990,26 @@ func (r *portForwardResource) Read(ctx context.Context, req resource.ReadRequest
 	resp.State.RemoveResource(ctx)
 }
 
+// Update: only source_cidrs changes in place (PATCH, API 2.34.0); everything else is ForceNew.
 func (r *portForwardResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var m portForwardModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &m)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	var p vpcPFView
+	_, err := r.pd.c.Do(ctx, http.MethodPatch, vpcPath(m.VPCID.ValueString(), "port-forwards", url.PathEscape(m.ForwardID.ValueString())), nil,
+		map[string]any{"source_cidrs": pfSources(ctx, &m)}, "", &p)
+	if err != nil {
+		resp.Diagnostics.AddError("Changing the port forward sources failed", vpcErr(err))
+		return
+	}
+	if p.ID == "" {
+		p.ID = apiID(m.ForwardID.ValueString())
+		p.Protocol, p.PublicPort, p.TargetIP, p.TargetPort = m.Protocol.ValueString(), m.PublicPort.ValueInt64(), m.TargetIP.ValueString(), m.TargetPort.ValueInt64()
+		p.SourceCIDRs = pfSources(ctx, &m)
+	}
+	r.fill(&m, &p)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
 

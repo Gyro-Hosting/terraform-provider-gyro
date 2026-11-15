@@ -38,12 +38,12 @@ type vpcMock struct {
 	pfs     map[int64]map[string]any // id -> vpc, protocol, ...
 	nics    map[int64]*vpcMockNIC
 	// counters
-	patches, gwPuts, deletes, nicDeletes, nicAttachPolls int
-	gwOffBeforeDelete                                    bool
-	failNIC                                              bool  // next attach ends in state error
-	foreignNIC                                           int64 // vpc id that gets a server card Terraform does not manage
-	hiddenInUse                                          int64 // vpc id whose DELETE answers 409 although GET shows it empty
-	log                                                  []string
+	patches, gwPuts, deletes, nicDeletes, nicAttachPolls, pfPatches int
+	gwOffBeforeDelete                                               bool
+	failNIC                                                         bool  // next attach ends in state error
+	foreignNIC                                                      int64 // vpc id that gets a server card Terraform does not manage
+	hiddenInUse                                                     int64 // vpc id whose DELETE answers 409 although GET shows it empty
+	log                                                             []string
 }
 
 func newVPCMock(base http.Handler) *vpcMock {
@@ -83,7 +83,11 @@ func (x *vpcMock) pfList(vpc int64) []map[string]any {
 	out := []map[string]any{}
 	for i := int64(0); i <= x.next+100; i++ {
 		if p, ok := x.pfs[i]; ok && p["vpc"] == vpc {
-			out = append(out, map[string]any{"id": i, "protocol": p["protocol"], "public_port": p["public_port"], "target_ip": p["target_ip"], "target_port": p["target_port"]})
+			src, _ := p["source_cidrs"].([]any)
+			if src == nil {
+				src = []any{}
+			}
+			out = append(out, map[string]any{"id": i, "protocol": p["protocol"], "public_port": p["public_port"], "target_ip": p["target_ip"], "target_port": p["target_port"], "source_cidrs": src})
 		}
 	}
 	return out
@@ -280,8 +284,31 @@ func (x *vpcMock) vpcHandler(w http.ResponseWriter, r *http.Request, mt []string
 			return
 		}
 		pid := x.id()
-		x.pfs[pid] = map[string]any{"vpc": id, "protocol": body["protocol"], "public_port": body["public_port"], "target_ip": body["target_ip"], "target_port": body["target_port"]}
-		jsonOut(w, 201, map[string]any{"id": pid, "protocol": body["protocol"], "public_port": body["public_port"], "target_ip": body["target_ip"], "target_port": body["target_port"]})
+		src, _ := body["source_cidrs"].([]any)
+		if src == nil {
+			src = []any{}
+		}
+		x.pfs[pid] = map[string]any{"vpc": id, "protocol": body["protocol"], "public_port": body["public_port"], "target_ip": body["target_ip"], "target_port": body["target_port"], "source_cidrs": src}
+		jsonOut(w, 201, map[string]any{"id": pid, "protocol": body["protocol"], "public_port": body["public_port"], "target_ip": body["target_ip"], "target_port": body["target_port"], "source_cidrs": src})
+	case sub == "port-forwards" && oid != "" && r.Method == http.MethodPatch:
+		pid, _ := strconv.ParseInt(oid, 10, 64)
+		p := x.pfs[pid]
+		if p == nil || p["vpc"] != id {
+			jsonErr(w, 404, "not_found", "pf")
+			return
+		}
+		src, ok := body["source_cidrs"].([]any)
+		if !ok {
+			jsonErr(w, 422, "invalid_source", "source_cidrs missing")
+			return
+		}
+		p["source_cidrs"] = src
+		x.pfPatches++
+		for _, v := range x.pfList(id) {
+			if v["id"] == pid {
+				jsonOut(w, 200, v)
+			}
+		}
 	case sub == "port-forwards" && oid != "" && r.Method == http.MethodDelete:
 		pid, _ := strconv.ParseInt(oid, 10, 64)
 		if p := x.pfs[pid]; p == nil || p["vpc"] != id {

@@ -1,3 +1,17 @@
+## 0.32.0 (2026-11-15)
+
+FEATURES:
+* **New resource `gyro_container_vpc_attachment`** (Gyro Public API 2.34.0): connects a node Gyro Containers environment (Mini, Small, Starter,
+  Standard, Pro) to one subnet (/26 or larger) of a `gyro_vpc` in tr-ist-1. Read-only `source_range` (fixed /28: connections from the containers to
+  the VPC come from it; it does not change when nodes are replaced or scaled), `endpoint_ip` (VPC servers reach the published services at
+  `endpoint_ip:port`), `node_ips`, `state`, `vpc_cidr`, `subnet_cidr`. `expose` blocks `{service, port}` are updated in place. Create waits for
+  `ready`, destroy waits until the attachment is gone. Free. Import: `<environment id>`.
+
+ENHANCEMENTS:
+* `gyro_port_forward`: new `source_cidrs` (set of public IPv4 CIDRs, at most 20; empty = everyone), changed in place
+  (`PATCH /cloud/vpcs/{id}/port-forwards/{pf}`); the other attributes stay ForceNew. Values are checked at plan time (CIDR form, network
+  address, public range).
+
 ## 0.31.0 (2026-11-15)
 
 FEATURES:

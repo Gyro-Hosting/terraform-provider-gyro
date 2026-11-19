@@ -1,7 +1,7 @@
 # Image uploads to "resimler/" trigger your thumbnail service.
 resource "gyro_storage_bucket_notification" "thumbnails" {
   service_id  = 456
-  bucket      = gyro_storage_bucket.assets.name
+  bucket      = gyro_storage_bucket.assets.full_name
   url         = "https://ornek.com/s3-olay"
   events      = ["storage.object.created"]
   prefix      = "resimler/"

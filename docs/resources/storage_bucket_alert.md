@@ -16,7 +16,7 @@ Fill alert of a Gyro Object Storage / Protected Storage bucket: one e-mail to th
 # E-mail once when the bucket reaches 80 % of the package (again after it drops below 95 % of that and fills up again).
 resource "gyro_storage_bucket_alert" "assets_full" {
   service_id = 456
-  bucket     = gyro_storage_bucket.assets.name
+  bucket     = gyro_storage_bucket.assets.full_name
   type       = "percent"
   value      = 80
 }

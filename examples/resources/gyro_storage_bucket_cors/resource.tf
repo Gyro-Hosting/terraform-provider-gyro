@@ -1,6 +1,6 @@
 resource "gyro_storage_bucket_cors" "assets" {
   service_id = 456
-  bucket     = gyro_storage_bucket.assets.name
+  bucket     = gyro_storage_bucket.assets.full_name
   rules = [
     {
       id              = "browser-upload" # presigned PUT from your web app

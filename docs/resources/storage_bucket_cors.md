@@ -15,7 +15,7 @@ CORS rules of a bucket (AWS S3 semantics). The resource owns all rules of the bu
 ```terraform
 resource "gyro_storage_bucket_cors" "assets" {
   service_id = 456
-  bucket     = gyro_storage_bucket.assets.name
+  bucket     = gyro_storage_bucket.assets.full_name
   rules = [
     {
       id              = "browser-upload" # presigned PUT from your web app

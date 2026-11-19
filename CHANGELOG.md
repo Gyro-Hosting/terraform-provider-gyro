@@ -1,3 +1,10 @@
+## 0.39.1 (2026-11-20)
+
+DOCUMENTATION:
+* Examples of `gyro_storage_bucket_cors`, `gyro_storage_bucket_website`, `gyro_storage_bucket_alert` and `gyro_storage_bucket_notification`
+  now pass `gyro_storage_bucket.<name>.full_name` (the real S3 bucket name). On Protected Storage `name` is the display name without the
+  service code, so `.name` was refused with 422 "bucket does not belong to this service"; `full_name` works on both storage products.
+
 ## 0.39.0 (2026-11-19)
 
 FEATURES:

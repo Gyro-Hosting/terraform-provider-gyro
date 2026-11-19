@@ -16,7 +16,7 @@ Publishes a bucket as a static website (https://<bucket>-<service code>.web.gyro
 # Single-page app (React / Vue / Angular) published from a bucket
 resource "gyro_storage_bucket_website" "app" {
   service_id     = 456 # object storage service
-  bucket         = gyro_storage_bucket.assets.name
+  bucket         = gyro_storage_bucket.assets.full_name
   index_document = "index.html" # entry file (default index.html)
   spa            = true         # missing paths (/dashboard/settings, reloads) return index.html with 200
 }

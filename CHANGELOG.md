@@ -1,3 +1,11 @@
+## 0.39.0 (2026-11-19)
+
+FEATURES:
+* **New resource `gyro_storage_bucket_alert`** (Gyro Public API 2.43.0): fill alert of an Object Storage / Protected Storage bucket -
+  `type` percent (share of the package, 1-100) or gb (1 - package size), `value`; one e-mail when usage reaches the threshold, re-armed
+  below 95 % of it. Read-only `threshold_gb`, `state` (armed / triggered), `last_sent_at`. Destroy removes the alert (no data is deleted).
+  Import: `<service id>/<bucket>`.
+
 ## 0.38.0 (2026-11-15)
 
 FEATURES:

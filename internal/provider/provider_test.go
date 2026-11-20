@@ -33,10 +33,10 @@ func TestProviderSchema(t *testing.T) {
 	if !resp.Schema.Attributes["token"].IsSensitive() {
 		t.Fatal("token must be sensitive")
 	}
-	if n := len(p.Resources(context.Background())); n != 50 {
+	if n := len(p.Resources(context.Background())); n != 51 {
 		t.Fatalf("resources: %d", n)
 	}
-	if n := len(p.DataSources(context.Background())); n != 10 {
+	if n := len(p.DataSources(context.Background())); n != 12 {
 		t.Fatalf("data sources: %d", n)
 	}
 }

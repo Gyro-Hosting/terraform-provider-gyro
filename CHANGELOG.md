@@ -1,3 +1,16 @@
+## 0.40.0 (2026-11-20)
+
+FEATURES:
+* **New resource `gyro_backup_space`** (Gyro Public API 2.44.0): Gyro Backup Space (Gyro Yedekleme Alanı, tr-ist-1) - an SFTP space with a hard
+  quota bound to one server of the account, reachable only from that server's IPv4 addresses. `plan` (50gb | 100gb | 250gb | 500gb | 1tb),
+  `cycle`, `server_id` (re-binds in place: PUT /cloud/backup-spaces/{id}/server), `name` (in place). Ordered with `confirm` + Idempotency-Key,
+  paid from the balance; waits until the SFTP user exists. Read-only `host`, `port`, `user`, `path`, `size_gb`, `state`, `allowed_ips`,
+  `password` (sensitive, from /credentials). `plan` and `cycle` changes are refused at plan time instead of replacing (a replacement would
+  delete every file); resize in the panel or with POST /cloud/services/{id}/resize. Destroy deletes the space and every file at once
+  (`delete_immediately = false` files a cancellation request instead). Import: service id.
+* **New data sources `gyro_backup_space`** (connection, usage, state; no password) **and `gyro_backup_space_plans`** (sizes, EUR prices per
+  cycle, servers a space can be bound to).
+
 ## 0.39.1 (2026-11-20)
 
 DOCUMENTATION:

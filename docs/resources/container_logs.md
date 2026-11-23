@@ -9,6 +9,8 @@ description: |-
 
 Log package and log alert rules of a Gyro Containers (ECS) environment. Free package: 7 days, 5 GB per month. Paid packages: `retention_days` 30 | 90 | 365 with `gb_month` 10 | 50 | 100 | 300 (365 days: up to 100), billed hourly from the prepaid balance. There is no overage bill: when the month's size is used up the oldest logs are deleted earlier and the `log_quota` alert is sent at 80 % and 100 %. Rules (at most 10) notify the environment's alert channels (`gyro_container_notifications`) when a text or level shows up at least `threshold` times within `window_minutes`. Destroy = free package and no rules.
 
+**Shorter retention deletes logs permanently.** When `retention_days` goes down (or a paid package is destroyed), logs older than the new retention are deleted permanently and cannot be recovered; the plan shows a warning before apply. Every switch from the free to a paid package is billed at least 6 hours; going back to free earlier charges the remaining hours at once ("minimum completion" in the hourly detail and CSV, like an additional IPv4).
+
 ## Example Usage
 
 ```terraform

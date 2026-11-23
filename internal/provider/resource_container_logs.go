@@ -19,6 +19,7 @@ import (
 // rules of a Gyro Containers environment (PUT /cloud/containers/{id}/logs/retention, GET|PUT .../log-rules, GET .../logs/usage).
 
 var _ resource.ResourceWithImportState = (*containerLogsResource)(nil)
+var _ resource.ResourceWithModifyPlan = (*containerLogsResource)(nil)
 
 type containerLogsResource struct{ pd *providerData }
 
@@ -53,7 +54,9 @@ func (r *containerLogsResource) Schema(_ context.Context, _ resource.SchemaReque
 		Description: "Log package and log alert rules of a Gyro Containers (ECS) environment. Free package: 7 days, 5 GB per month. Paid packages: " +
 			"retention_days 30 | 90 | 365 with gb_month 10 | 50 | 100 | 300 (365 days: up to 100), billed hourly from the prepaid balance; no overage bill " +
 			"(when the month's size is used up the oldest logs go first). Rules (at most 10) notify the environment's alert channels (gyro_container_notifications) " +
-			"when a text / level shows up at least `threshold` times within `window_minutes`. Destroy = free package and no rules.",
+			"when a text / level shows up at least `threshold` times within `window_minutes`. Destroy = free package and no rules. A shorter retention_days " +
+			"deletes the older logs PERMANENTLY (plan shows a warning). Every switch from free to a paid package is billed at least 6 hours; going back " +
+			"to free earlier charges the remaining hours at once (\"minimum completion\").",
 		Attributes: map[string]schema.Attribute{
 			"id":             schema.StringAttribute{Computed: true, PlanModifiers: keep},
 			"service_id":     schema.Int64Attribute{Required: true, PlanModifiers: replaceI, Description: "Container environment (service) id."},
@@ -72,6 +75,43 @@ func (r *containerLogsResource) Schema(_ context.Context, _ resource.SchemaReque
 					"enabled":        schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(true)},
 				}}},
 		},
+	}
+}
+
+// ModifyPlan warns before apply (B-04 / F07, SOE 2026-11-23): a shorter retention deletes older logs permanently; free -> paid is billed
+// at least 6 hours; destroy of a paid package goes back to free (7 days).
+func (r *containerLogsResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() {
+		var pd types.Int64
+		if req.Plan.Raw.IsNull() {
+			return
+		}
+		resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("retention_days"), &pd)...)
+		if !pd.IsUnknown() && !pd.IsNull() && pd.ValueInt64() > 7 {
+			resp.Diagnostics.AddWarning("Paid log package: minimum 6 hours",
+				"A switch from the free to a paid log package is billed at least 6 hours from the prepaid balance; going back to free earlier charges the remaining hours at once (minimum completion).")
+		}
+		return
+	}
+	var sd types.Int64
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("retention_days"), &sd)...)
+	from := sd.ValueInt64()
+	to := int64(7)
+	if !req.Plan.Raw.IsNull() {
+		var pd types.Int64
+		resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("retention_days"), &pd)...)
+		if pd.IsUnknown() || pd.IsNull() {
+			return
+		}
+		to = pd.ValueInt64()
+	}
+	if to < from {
+		resp.Diagnostics.AddWarning("Log retention shrinks: older logs are deleted permanently",
+			fmt.Sprintf("Retention drops from %d to %d days. Logs older than %d days are deleted PERMANENTLY and cannot be recovered. "+
+				"If the paid package has run less than 6 hours, the remaining hours are charged at once (minimum completion).", from, to, to))
+	} else if from == 7 && to > 7 {
+		resp.Diagnostics.AddWarning("Paid log package: minimum 6 hours",
+			"A switch from the free to a paid log package is billed at least 6 hours from the prepaid balance; going back to free earlier charges the remaining hours at once (minimum completion).")
 	}
 }
 

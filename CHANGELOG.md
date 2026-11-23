@@ -1,3 +1,10 @@
+## 0.40.1 (2026-11-23)
+
+ENHANCEMENTS:
+* `gyro_container_logs`: the plan now warns before apply when `retention_days` goes down (or on destroy of a paid package): logs older than the
+  new retention are deleted permanently. A switch from the free to a paid package warns that it is billed at least 6 hours; going back to free
+  earlier charges the remaining hours at once ("minimum completion", same as an additional IPv4). No schema change.
+
 ## 0.40.0 (2026-11-20)
 
 FEATURES:

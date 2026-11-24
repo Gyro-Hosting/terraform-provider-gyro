@@ -1,3 +1,14 @@
+## 0.41.0 (2026-11-24)
+
+FEATURES:
+* **Provider argument `account_id`** (Gyro Public API 2.46.0): manage an account whose owner added you as a panel user (Sub-Accounts)
+  with your own key. Every request carries `X-Account-Id`; the API allows exactly what the panel allows that user (owner-only objects such
+  as API keys, webhooks and reseller customers are refused with 403 `account_owner_only`). Use provider aliases for several accounts.
+  Not read from the environment or the gyro CLI profile on purpose: a state belongs to one account, and changing `account_id` makes the
+  existing resources look deleted (Terraform would plan to create them again).
+  In another account anything that costs money is paid from that account's balance only, and without the "view passwords"
+  permission secret attributes come back empty.
+
 ## 0.40.1 (2026-11-23)
 
 ENHANCEMENTS:

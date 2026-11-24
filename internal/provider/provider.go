@@ -4,6 +4,7 @@ package provider
 import (
 	"context"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/Gyro-Hosting/terraform-provider-gyro/internal/client"
@@ -30,6 +31,7 @@ type providerModel struct {
 	Endpoint     types.String `tfsdk:"endpoint"`
 	Token        types.String `tfsdk:"token"`
 	Profile      types.String `tfsdk:"profile"`
+	AccountID    types.Int64  `tfsdk:"account_id"`
 	PollInterval types.Int64  `tfsdk:"poll_interval_seconds"`
 	PollTimeout  types.Int64  `tfsdk:"poll_timeout_minutes"`
 }
@@ -65,6 +67,14 @@ func (p *gyroProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp 
 					"($GYRO_CONFIG_FILE / $XDG_CONFIG_HOME respected); a profile saved with token_storage = \"keyring\" is read from the OS key store " +
 					"(macOS Keychain, Windows Credential Manager, Linux Secret Service). Defaults to $GYRO_PROFILE, then the CLI default profile. " +
 					"Order: token > $GYRO_TOKEN > profile. Create one with `gyro auth login` or `gyro configure`.",
+			},
+			"account_id": schema.Int64Attribute{
+				Optional: true,
+				Description: "Manage another account with your own key (Gyro Public API 2.46.0): the id of an account whose owner added you as a panel user " +
+					"(Sub-Accounts; list them with `gyro account list` or GET /accounts). Every request is sent with X-Account-Id and is allowed exactly " +
+					"what the panel allows that user (owner-only resources such as API keys, webhooks and reseller customers are refused). " +
+					"Omit for your own account. Deliberately NOT read from the environment or the CLI profile: a state belongs to one account, " +
+					"changing account_id makes existing resources look deleted (planned for re-creation). Use provider aliases for several accounts.",
 			},
 			"poll_interval_seconds": schema.Int64Attribute{Optional: true, Description: "Seconds between status polls (default 5)."},
 			"poll_timeout_minutes":  schema.Int64Attribute{Optional: true, Description: "Maximum minutes to wait for a server to become ready (default 15)."},
@@ -110,6 +120,14 @@ func (p *gyroProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		c:            client.New(endpoint, token, "terraform-provider-gyro/"+p.version),
 		pollInterval: 5 * time.Second,
 		pollTimeout:  15 * time.Minute,
+	}
+	if !m.AccountID.IsNull() && !m.AccountID.IsUnknown() {
+		if m.AccountID.ValueInt64() < 1 {
+			resp.Diagnostics.AddAttributeError(path.Root("account_id"), "Invalid account_id",
+				"account_id must be a positive account id from `gyro account list` (omit it for your own account).")
+			return
+		}
+		pd.c.AccountID = strconv.FormatInt(m.AccountID.ValueInt64(), 10)
 	}
 	if !m.PollInterval.IsNull() && m.PollInterval.ValueInt64() > 0 {
 		pd.pollInterval = time.Duration(m.PollInterval.ValueInt64()) * time.Second

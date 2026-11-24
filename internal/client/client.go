@@ -22,9 +22,11 @@ const DefaultEndpoint = "https://www.gyrohosting.com/api/v1/client"
 
 // Client talks to the API. Zero values are not usable; use New.
 type Client struct {
-	Endpoint   string
-	Token      string
-	UserAgent  string
+	Endpoint  string
+	Token     string
+	UserAgent string
+	// AccountID (API 2.46.0): sent as X-Account-Id; "" = the key owner's own account.
+	AccountID  string
 	HTTP       *http.Client
 	MaxRetries int
 	// Sleep is replaceable in tests.
@@ -154,6 +156,9 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 		}
 		if c.UserAgent != "" {
 			req.Header.Set("User-Agent", c.UserAgent)
+		}
+		if c.AccountID != "" {
+			req.Header.Set("X-Account-Id", c.AccountID)
 		}
 		if body != nil {
 			req.Header.Set("Content-Type", "application/json")

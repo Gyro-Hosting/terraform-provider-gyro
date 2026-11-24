@@ -160,3 +160,25 @@ func TestNoRetryForNonIdempotentWrite(t *testing.T) {
 		t.Fatalf("non-idempotent POST must not be retried on 5xx (calls=%d)", n)
 	}
 }
+
+// API 2.46.0: AccountID is sent as X-Account-Id; empty = no header.
+func TestAccountIDHeader(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Header.Get("X-Account-Id"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := client.New(srv.URL+"/api/v1/client", "wck_testA", "test")
+	if _, err := c.Do(context.Background(), http.MethodGet, "cloud/ssh-keys", nil, nil, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	c.AccountID = "35553"
+	if _, err := c.Do(context.Background(), http.MethodGet, "cloud/ssh-keys", nil, nil, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != "" || got[1] != "35553" {
+		t.Fatalf("headers: %q", got)
+	}
+}

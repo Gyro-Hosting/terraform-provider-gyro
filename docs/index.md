@@ -23,6 +23,13 @@ terraform {
 
 # Reads GYRO_TOKEN (client API key, wck_...) from the environment.
 provider "gyro" {}
+
+# Another account you are a panel user of (Sub-Accounts), with your own key (Gyro Public API 2.46.0).
+# Permissions are the panel user permissions; list the ids with `gyro account list`.
+provider "gyro" {
+  alias      = "client"
+  account_id = 12345
+}
 ```
 
 ## Limits
@@ -40,6 +47,7 @@ When an apply is refused because of a limit, the error names the limit, the curr
 
 ### Optional
 
+- `account_id` (Number) Manage another account with your own key (Gyro Public API 2.46.0): the id of an account whose owner added you as a panel user (Sub-Accounts; list them with `gyro account list` or GET /accounts). Every request is sent with X-Account-Id and is allowed exactly what the panel allows that user (owner-only resources such as API keys, webhooks and reseller customers are refused). Omit for your own account. Deliberately NOT read from the environment or the CLI profile: a state belongs to one account, changing account_id makes existing resources look deleted (planned for re-creation). Use provider aliases for several accounts.
 - `endpoint` (String) API base URL. Defaults to $GYRO_ENDPOINT or https://www.gyrohosting.com/api/v1/client.
 - `poll_interval_seconds` (Number) Seconds between status polls (default 5).
 - `poll_timeout_minutes` (Number) Maximum minutes to wait for a server to become ready (default 15).

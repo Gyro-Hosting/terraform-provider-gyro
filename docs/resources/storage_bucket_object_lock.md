@@ -3,12 +3,12 @@
 page_title: "gyro_storage_bucket_object_lock Resource - gyro"
 subcategory: ""
 description: |-
-  Default retention of a locked bucket on a Gyro Protected Storage service: every new object version is locked for days automatically. GOVERNANCE can only be bypassed by Gyro staff on request; COMPLIANCE cannot be shortened or removed by anyone (Gyro included) and needs acknowledge_compliance = true. Versions locked under this rule stay locked until their own date even after the rule changes. Destroy only removes the resource from the Terraform state and leaves the rule in place (a warning is shown), unless disable_on_destroy = true (then new objects are no longer locked automatically; existing locks are not affected). The bucket must be created with object_lock = true.
+  Default retention of a locked bucket on a Gyro Protected Storage service: every new object version is locked for days automatically. GOVERNANCE can only be bypassed by Gyro staff on request; COMPLIANCE cannot be shortened or removed by anyone (Gyro included) and needs acknowledge_compliance = true. Versions locked under this rule stay locked until their own date even after the rule changes. Destroy only removes the resource from the Terraform state and leaves the rule in place (a warning is shown), unless disable_on_destroy = true (then new objects are no longer locked automatically; existing locks are not affected). The bucket must be created with object_lock = true. A lock may not end after the service end (renewal) date (Gyro Public API 2.46.1): today + days must not pass it, or apply fails with 422 retention_exceeds_service_end (the plan warns first). Because every new object is locked from its upload time, new uploads are refused once less time is left until the service end than days: renew in time or use a long cycle (gyro_storage.cycle = annually, biennially, triennially).
 ---
 
 # gyro_storage_bucket_object_lock (Resource)
 
-Default retention of a locked bucket on a Gyro Protected Storage service: every new object version is locked for `days` automatically. GOVERNANCE can only be bypassed by Gyro staff on request; COMPLIANCE cannot be shortened or removed by anyone (Gyro included) and needs `acknowledge_compliance = true`. Versions locked under this rule stay locked until their own date even after the rule changes. Destroy only removes the resource from the Terraform state and leaves the rule in place (a warning is shown), unless `disable_on_destroy = true` (then new objects are no longer locked automatically; existing locks are not affected). The bucket must be created with `object_lock = true`.
+Default retention of a locked bucket on a Gyro Protected Storage service: every new object version is locked for `days` automatically. GOVERNANCE can only be bypassed by Gyro staff on request; COMPLIANCE cannot be shortened or removed by anyone (Gyro included) and needs `acknowledge_compliance = true`. Versions locked under this rule stay locked until their own date even after the rule changes. Destroy only removes the resource from the Terraform state and leaves the rule in place (a warning is shown), unless `disable_on_destroy = true` (then new objects are no longer locked automatically; existing locks are not affected). The bucket must be created with `object_lock = true`. A lock may not end after the service end (renewal) date (Gyro Public API 2.46.1): today + `days` must not pass it, or apply fails with 422 `retention_exceeds_service_end` (the plan warns first). Because every new object is locked from its upload time, new uploads are refused once less time is left until the service end than `days`: renew in time or use a long cycle (`gyro_storage.cycle` = annually, biennially, triennially).
 
 ## Example Usage
 
@@ -37,7 +37,7 @@ resource "gyro_storage_bucket_object_lock" "archive" {
 ### Required
 
 - `bucket` (String) Full bucket name (gyro_storage_bucket.<x>.full_name).
-- `days` (Number) Retention in days, 1-3650.
+- `days` (Number) Retention in days, 1-3650 and at most the days left until the service end date (`max_retention_days` of the service).
 - `mode` (String) GOVERNANCE or COMPLIANCE.
 - `service_id` (Number) Protected Storage service id.
 

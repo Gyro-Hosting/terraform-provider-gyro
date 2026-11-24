@@ -21,6 +21,7 @@ import (
 
 var (
 	_ resource.ResourceWithImportState = (*bucketObjectLockResource)(nil)
+	_ resource.ResourceWithModifyPlan  = (*bucketObjectLockResource)(nil)
 	_ resource.ResourceWithImportState = (*bucketNoncurrentResource)(nil)
 )
 
@@ -60,14 +61,17 @@ func (r *bucketObjectLockResource) Schema(_ context.Context, _ resource.SchemaRe
 			"GOVERNANCE can only be bypassed by Gyro staff on request; COMPLIANCE cannot be shortened or removed by anyone (Gyro included) and needs " +
 			"`acknowledge_compliance = true`. Versions locked under this rule stay locked until their own date even after the rule changes. " +
 			"Destroy only removes the resource from the Terraform state and leaves the rule in place (a warning is shown), unless `disable_on_destroy = true` " +
-			"(then new objects are no longer locked automatically; existing locks are not affected). The bucket must be created with `object_lock = true`.",
+			"(then new objects are no longer locked automatically; existing locks are not affected). The bucket must be created with `object_lock = true`. " +
+			"A lock may not end after the service end (renewal) date (Gyro Public API 2.46.1): today + `days` must not pass it, or apply fails with 422 " +
+			"`retention_exceeds_service_end` (the plan warns first). Because every new object is locked from its upload time, new uploads are refused " +
+			"once less time is left until the service end than `days`: renew in time or use a long cycle (`gyro_storage.cycle` = annually, biennially, triennially).",
 		Attributes: map[string]schema.Attribute{
 			"id":         schema.StringAttribute{Computed: true, PlanModifiers: keep},
 			"service_id": schema.Int64Attribute{Required: true, PlanModifiers: replaceI, Description: "Protected Storage service id."},
 			"bucket":     schema.StringAttribute{Required: true, PlanModifiers: replaceS, Description: "Full bucket name (gyro_storage_bucket.<x>.full_name)."},
 			"mode": schema.StringAttribute{Required: true, Description: "GOVERNANCE or COMPLIANCE.",
 				Validators: []validator.String{stringvalidator.OneOf("GOVERNANCE", "COMPLIANCE")}},
-			"days": schema.Int64Attribute{Required: true, Description: "Retention in days, 1-3650.",
+			"days": schema.Int64Attribute{Required: true, Description: "Retention in days, 1-3650 and at most the days left until the service end date (`max_retention_days` of the service).",
 				Validators: []validator.Int64{int64validator.Between(1, 3650)}},
 			"acknowledge_compliance": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false),
 				Description: "Must be true for mode = COMPLIANCE: you accept that COMPLIANCE-locked versions cannot be deleted by anyone until they expire, " +
@@ -76,6 +80,40 @@ func (r *bucketObjectLockResource) Schema(_ context.Context, _ resource.SchemaRe
 				Description: "Turn the default retention off when the resource is destroyed (default false: destroy only forgets the resource)."},
 		},
 	}
+}
+
+// ModifyPlan warns before apply when today + days would pass the service end date (API 422 retention_exceeds_service_end).
+func (r *bucketObjectLockResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() || r.pd == nil || r.pd.c == nil {
+		return
+	}
+	var m bucketObjectLockModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &m)...)
+	if resp.Diagnostics.HasError() || m.ServiceID.IsUnknown() || m.ServiceID.IsNull() || m.Days.IsUnknown() || m.Days.IsNull() {
+		return
+	}
+	if lw := lockLimitWarning(ctx, r.pd.c, m.ServiceID.ValueInt64(), m.Days.ValueInt64()); lw != "" {
+		resp.Diagnostics.AddWarning("Retention passes the service end date", lw)
+	}
+}
+
+type lockSummary struct {
+	MaxDays    *int64  `json:"max_retention_days"`
+	ServiceEnd *string `json:"service_end"`
+}
+
+// lockLimitWarning returns a warning text when days exceed the current limit of the Protected Storage service (empty = fine or unknown).
+func lockLimitWarning(ctx context.Context, c *client.Client, service, days int64) string {
+	var s lockSummary
+	if _, err := c.Do(ctx, http.MethodGet, fmt.Sprintf("cloud/storage/%d/object-lock", service), nil, nil, "", &s); err != nil || s.MaxDays == nil || s.ServiceEnd == nil {
+		return ""
+	}
+	if days <= *s.MaxDays {
+		return ""
+	}
+	return fmt.Sprintf("days = %d, but a lock may not end after the service end date (%s): at most %d days now. Apply will fail with 422 "+
+		"retention_exceeds_service_end. Renew the service or move it to a longer billing cycle (biennially = 2 years, triennially = 3 years), "+
+		"or lower days.", days, *s.ServiceEnd, *s.MaxDays)
 }
 
 func (r *bucketObjectLockResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {

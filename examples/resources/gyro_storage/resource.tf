@@ -13,7 +13,7 @@ resource "gyro_storage" "yedek" {
 # Protected Storage with 2 object lock (WORM) buckets
 resource "gyro_storage" "worm" {
   plan                = "protected-250gb"
-  cycle               = "annually"
+  cycle               = "annually" # biennially (2 years) / triennially (3 years) for longer locks: a lock may not end after the service end date
   object_lock_buckets = 2
 }
 

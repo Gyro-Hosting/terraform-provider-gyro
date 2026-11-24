@@ -28,7 +28,7 @@ resource "gyro_storage" "yedek" {
 # Protected Storage with 2 object lock (WORM) buckets
 resource "gyro_storage" "worm" {
   plan                = "protected-250gb"
-  cycle               = "annually"
+  cycle               = "annually" # biennially (2 years) / triennially (3 years) for longer locks: a lock may not end after the service end date
   object_lock_buckets = 2
 }
 
@@ -47,10 +47,10 @@ resource "gyro_storage_bucket" "dosyalar" {
 
 ### Optional
 
-- `cycle` (String) Billing cycle: monthly (default), quarterly, semiannually, annually.
+- `cycle` (String) Billing cycle: monthly (default), quarterly, semiannually, annually; protected plans also biennially (2 years) and triennially (3 years). An object lock may not end after the service end date, so choose a long cycle for long locks.
 - `delete_immediately` (Boolean) destroy cancels at once and deletes the data (default). false = file a cancellation request instead (the service keeps running until it is processed).
 - `name` (String) Service name (nickname, max 60). Changing it renames the service in place; when not set, the name on the platform (panel) is kept.
-- `object_lock_buckets` (Number) Protected plans only: object lock (WORM) bucket rights bought with the service (billed every cycle). Set at creation.
+- `object_lock_buckets` (Number) Protected plans only: object lock (WORM) bucket rights bought with the service (billed every cycle). Set at creation. Locks may not end after the service end date.
 
 ### Read-Only
 

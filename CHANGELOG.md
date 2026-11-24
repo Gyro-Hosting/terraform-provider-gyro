@@ -1,3 +1,12 @@
+## 0.41.1 (2026-11-24)
+
+ENHANCEMENTS:
+* `gyro_storage`: `cycle` accepts `biennially` (2 years) and `triennially` (3 years) for protected plans (Gyro Public API 2.46.1; price = yearly x2 / x3,
+  the object lock add-on likewise). `cycle` still cannot change after creation.
+* `gyro_storage_bucket_object_lock`: an object lock may not end after the service end (renewal) date. The plan now warns before apply when today + `days`
+  passes the service end (`max_retention_days` / `service_end` of the service); apply would fail with 422 `retention_exceeds_service_end`. Because every
+  new object is locked from its upload time, new uploads to the bucket are refused once less time is left than `days`: renew in time or use a long cycle.
+
 ## 0.41.0 (2026-11-24)
 
 FEATURES:

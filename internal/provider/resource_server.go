@@ -91,10 +91,10 @@ func (r *serverResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				DeprecationMessage: "location is deprecated and will be removed in a future major version. Use region (see gyro_locations) instead; switching does not replace the server.",
 				PlanModifiers:      []planmodifier.String{stringplanmodifier.RequiresReplaceIfConfigured(), stringplanmodifier.UseStateForUnknown()}},
 			"cycle": schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("monthly"),
-				Description:   "Billing cycle: monthly (default), quarterly, semiannually, annually. Ignored for prepaid products (billed hourly from the account balance, e.g. region tr-ist-1).",
+				Description:   "Billing cycle: monthly (default), quarterly, semiannually, annually (Turkey VDS plans: monthly, semiannually, annually, biennially; the API answers 422 cycle_invalid with the allowed list). Ignored for prepaid products (billed hourly from the account balance, e.g. the Gyro Cloud Istanbul plans in tr-ist-1).",
 				Validators:    []validator.String{stringvalidator.OneOf("monthly", "quarterly", "semiannually", "annually")},
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
-			"image": schema.StringAttribute{Required: true, Description: "Image slug from gyro_images, e.g. debian-12, or custom:<id> (gyro_server_template.image, tr-ist-1). Changing it replaces the server.",
+			"image": schema.StringAttribute{Required: true, Description: "Image slug from gyro_images, e.g. debian-12, or custom:<id> (gyro_server_template.image; region tr-ist-1: a Gyro Cloud Istanbul plan, hourly prepaid, or since API 2.47.0 a Turkey VDS plan such as gvds-2, billed with the plan's normal invoice for cycle, first invoice paid from the balance). Changing it replaces the server.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 			"hostname": schema.StringAttribute{Optional: true, Computed: true, Description: "Host name. Changes are applied in place (must be a FQDN when renaming).",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
@@ -242,7 +242,7 @@ func (r *serverResource) Create(ctx context.Context, req resource.CreateRequest,
 	// One key per logical order: the client retries with it, the API replays instead of ordering twice.
 	var res *client.CreateServerResult
 	var err error
-	if tid := client.TemplateImageID(in.Image); tid > 0 { // image = custom:<id> -> server from your own template (tr-ist-1, API 2.15.0)
+	if tid := client.TemplateImageID(in.Image); tid > 0 { // image = custom:<id> -> server from your own template (tr-ist-1, API 2.15.0; Turkey VDS + cycle 2.47.0)
 		res, err = r.pd.c.CreateServerFromTemplate(ctx, tid, in, client.NewIdempotencyKey())
 	} else {
 		res, err = r.pd.c.CreateServer(ctx, in, client.NewIdempotencyKey())

@@ -7,7 +7,7 @@ description: |-
 
 # gyro_server_template (Resource)
 
-A custom template captured from one of your tr-ist-1 (Istanbul) servers. Use its `image` (`custom:<id>`) on `gyro_server` to create servers from it. Only the root disk is copied; new servers get a new host name, IP, root password, SSH host keys and machine id (cloud-init), your users, files and settings stay. Billed 0.05 EUR per GB-month of the space the template really uses (prepaid, hourly from the account balance); destroying the template stops the charge. At most 10 per account, visible only in your account. Images cannot be uploaded from outside. Gyro Public API 2.15.0.
+A custom template captured from one of your tr-ist-1 (Istanbul) servers. Use its `image` (`custom:<id>`) on `gyro_server` to create servers from it: on a Gyro Cloud Istanbul plan (hourly prepaid) or, since Gyro Public API 2.47.0, on a Turkey VDS plan (`gvds-*`, the plan's normal invoice for `cycle`, first invoice paid from the account balance; the order is not placed if the balance is not enough). Only the root disk is copied; new servers get a new host name, IP, root password, SSH host keys and machine id (cloud-init), your users, files and settings stay. Billed 0.05 EUR per GB-month of the space the template really uses (prepaid, hourly from the account balance); destroying the template stops the charge. At most 10 per account, visible only in your account. Images cannot be uploaded from outside. Gyro Public API 2.15.0.
 
 ## Example Usage
 
@@ -24,6 +24,16 @@ resource "gyro_server" "web2" {
   image         = gyro_server_template.golden.image
   hostname      = "web2.example.com"
   ssh_key_ids   = [gyro_ssh_key.laptop.id]
+  confirm_order = true
+}
+
+# Turkey VDS plan from the same template: the plan's normal invoice (first period from the balance)
+resource "gyro_server" "vds" {
+  plan          = "gvds-2"
+  region        = "tr-ist-1"
+  cycle         = "annually"
+  image         = gyro_server_template.golden.image
+  hostname      = "vds.example.com"
   confirm_order = true
 }
 ```

@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -180,5 +181,25 @@ func TestAccountIDHeader(t *testing.T) {
 	}
 	if len(got) != 2 || got[0] != "" || got[1] != "35553" {
 		t.Fatalf("headers: %q", got)
+	}
+}
+
+// API 2.47.0: a server from a template sends region and cycle (Turkey VDS plans are billed per cycle; prepaid plans ignore it).
+func TestCreateServerFromTemplateSendsCycleRegion(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(202)
+		_, _ = w.Write([]byte(`{"data":{"dry_run":true,"quote":{"product_id":134,"cycle":"annually","billing":"invoice"}}}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := client.New(srv.URL+"/api/v1/client", "wck_testA", "test")
+	req := client.CreateServerRequest{Plan: "gvds-2", Region: "tr-ist-1", Cycle: "annually", Hostname: "web2.example.com", DryRun: true}
+	if _, err := c.CreateServerFromTemplate(context.Background(), 9, req, ""); err != nil {
+		t.Fatal(err)
+	}
+	if body["plan"] != "gvds-2" || body["region"] != "tr-ist-1" || body["cycle"] != "annually" || body["dry_run"] != true {
+		t.Fatalf("body: %v", body)
 	}
 }

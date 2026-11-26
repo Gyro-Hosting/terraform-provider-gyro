@@ -79,7 +79,9 @@ func (c *Client) DeleteTemplate(ctx context.Context, id int64) error {
 	return err
 }
 
-// CreateServerFromTemplate orders a tr-ist-1 server installed from template tplID (same money rules as CreateServer).
+// CreateServerFromTemplate orders a server installed from template tplID (same money rules as CreateServer): a Gyro Cloud
+// Istanbul plan (hourly prepaid) or, since API 2.47.0, a Turkey VDS plan (the plan's normal invoice; req.Cycle = first period,
+// paid from the balance). req.Region resolves req.Plan (API default tr-ist-1); req.Cycle is ignored by the API for prepaid plans.
 func (c *Client) CreateServerFromTemplate(ctx context.Context, tplID int64, req CreateServerRequest, idemKey string) (*CreateServerResult, error) {
 	var r CreateServerResult
 	body := map[string]any{"confirm": req.Confirm}
@@ -88,6 +90,12 @@ func (c *Client) CreateServerFromTemplate(ctx context.Context, tplID int64, req 
 	}
 	if req.Plan != "" {
 		body["plan"] = req.Plan
+	}
+	if req.Region != "" {
+		body["region"] = req.Region
+	}
+	if req.Cycle != "" {
+		body["cycle"] = req.Cycle
 	}
 	if req.Hostname != "" {
 		body["hostname"] = req.Hostname

@@ -1,3 +1,12 @@
+## 0.42.0 (2026-11-26)
+
+ENHANCEMENTS:
+* `gyro_server` with `image = gyro_server_template.<name>.image` (`custom:<id>`) can now use a **Turkey VDS plan** (e.g. `plan = "gvds-2"`,
+  `region = "tr-ist-1"`), besides the Gyro Cloud Istanbul plans (Gyro Public API 2.47.0). The server is billed with the plan's normal invoice for
+  `cycle` (monthly default; Turkey VDS plans offer monthly, semiannually, annually, biennially); the first invoice is paid from the account balance
+  at apply time and the order is not placed if the balance is not enough. The provider now sends `region` and `cycle` with an order from a template
+  (the API ignores `cycle` for the hourly prepaid Istanbul plans); an invalid cycle fails with 422 `cycle_invalid` and the allowed list.
+
 ## 0.41.1 (2026-11-24)
 
 ENHANCEMENTS:

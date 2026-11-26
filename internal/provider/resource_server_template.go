@@ -49,7 +49,7 @@ func (r *serverTemplateResource) Schema(_ context.Context, _ resource.SchemaRequ
 	keep := []planmodifier.String{stringplanmodifier.UseStateForUnknown()}
 	resp.Schema = schema.Schema{
 		Description: "A custom template captured from one of your tr-ist-1 (Istanbul) servers. Use its `image` (`custom:<id>`) on gyro_server to create " +
-			"servers from it. Only the root disk is copied; new servers get a new host name, IP, root password, SSH host keys and machine id. " +
+			"servers from it (a Gyro Cloud Istanbul plan, hourly prepaid, or since API 2.47.0 a Turkey VDS plan billed with its normal invoice for cycle). Only the root disk is copied; new servers get a new host name, IP, root password, SSH host keys and machine id. " +
 			"Billed 0.05 EUR per GB-month of the space the template really uses (prepaid, hourly); destroying the template stops the charge. " +
 			"At most 10 per account; images cannot be uploaded from outside.",
 		Attributes: map[string]schema.Attribute{

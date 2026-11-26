@@ -47,12 +47,12 @@ output "web_ipv4" {
 ### Required
 
 - `confirm_order` (Boolean) Must be true: creating a server spends account balance.
-- `image` (String) Image slug from gyro_images, e.g. debian-12, or `custom:<id>` (`gyro_server_template.image`, tr-ist-1: the server is installed from your own template). Changing it replaces the server.
+- `image` (String) Image slug from gyro_images, e.g. debian-12, or `custom:<id>` (`gyro_server_template.image`, region tr-ist-1: the server is installed from your own template on a Gyro Cloud Istanbul plan, hourly prepaid, or since API 2.47.0 on a Turkey VDS plan such as `gvds-2`, billed with the plan's normal invoice for `cycle`, the first invoice paid from the balance). Changing it replaces the server.
 
 ### Optional
 
 - `auto_renew` (Boolean) Renew automatically from the account's payment source.
-- `cycle` (String) Billing cycle: monthly (default), quarterly, semiannually, annually. Ignored for prepaid products (billed hourly from the account balance, e.g. region tr-ist-1).
+- `cycle` (String) Billing cycle: monthly (default), quarterly, semiannually, annually (Turkey VDS plans: monthly, semiannually, annually, biennially; the API answers 422 `cycle_invalid` with the allowed list). Ignored for prepaid products (billed hourly from the account balance, e.g. the Gyro Cloud Istanbul plans in tr-ist-1).
 - `delete_immediately` (Boolean) destroy cancels at once (default; billing stops, server powered off and wiped after the grace period). false = file a cancellation request instead.
 - `hostname` (String) Host name. Changes are applied in place (must be a FQDN when renaming).
 - `location` (String, Deprecated) Deprecated: legacy location code, kept so existing configurations and state keep working. Use region.
